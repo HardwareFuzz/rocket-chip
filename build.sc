@@ -341,6 +341,11 @@ trait Emulator extends Cross.Module2[String, String] {
 object emulator extends Cross[Emulator](
   // RocketSuiteA
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.DefaultConfig"),
+  // DefaultConfigWithTrace - for complete logging
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.DefaultConfigWithTrace"),
+  // Maximum extension configurations with commit log
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV64ConfigWithTrace"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV32ConfigWithTrace"),
   // RocketSuiteB
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.DefaultBufferlessConfig"),
   // RocketSuiteC

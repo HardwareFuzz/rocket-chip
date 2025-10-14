@@ -285,6 +285,7 @@ class WithSV39                                            extends WithPgLevels(3
 // Simulation-only configs
 class WithNoSimulationTimeout extends RocketCoreConfig(_.copy(haveSimTimeout = false))
 class WithDebugROB(enable: Boolean = true, size: Int = 0) extends RocketCoreConfig(_.copy(debugROB = Option.when(enable)(DebugROBParams(size))))
+class WithTraceCoreIngress extends RocketCoreConfig(_.copy(enableTraceCoreIngress = true))
 
 // FPU configs
 class WithoutFPU            extends RocketCoreConfig(_.copy(fpu = None))

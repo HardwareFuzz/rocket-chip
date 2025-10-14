@@ -776,6 +776,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val dmem_resp_valid = io.dmem.resp.valid && io.dmem.resp.bits.has_data
   val dmem_resp_replay = dmem_resp_valid && io.dmem.resp.bits.replay
 
+  // Track PC and instruction for outstanding long-latency operations
+  val ll_pc_tracker = Reg(Vec(32, UInt(vaddrBitsExtended.W)))
+  val ll_inst_tracker = Reg(Vec(32, UInt(32.W)))
+
   class LLWB extends Bundle {
     val data = UInt(xLen.W)
     val tag = UInt(5.W)
@@ -1121,6 +1125,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.imem.ras_update := DontCare
 
   io.fpu.valid := !ctrl_killd && id_ctrl.fp
+  io.fpu.pc := ibuf.io.pc  // PC of the FP instruction in ID stage
   io.fpu.killx := ctrl_killx
   io.fpu.killm := killm_common || vec_kill_mem
   io.fpu.inst := id_inst(0)
@@ -1129,6 +1134,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.fpu.ll_resp_data := (if (minFLen == 32) io.dmem.resp.bits.data_word_bypass else io.dmem.resp.bits.data)
   io.fpu.ll_resp_type := io.dmem.resp.bits.size
   io.fpu.ll_resp_tag := dmem_resp_waddr
+  io.fpu.ll_resp_pc := ll_pc_tracker(dmem_resp_waddr)  // Tracked PC of the FP load
+  io.fpu.ll_resp_inst := ll_inst_tracker(dmem_resp_waddr)  // Tracked instruction of the FP load
   io.fpu.keep_clock_enabled := io.ptw.customCSRs.disableCoreClockGate
 
   io.fpu.v_sew := csr.io.vector.map(_.vconfig.vtype.vsew).getOrElse(0.U)
@@ -1139,6 +1146,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       io.fpu.ll_resp_data := v.resp.bits.data
       io.fpu.ll_resp_type := v.resp.bits.size
       io.fpu.ll_resp_tag := v.resp.bits.rd
+      // Note: vector response PC not supported yet, using wb_reg_pc as fallback
+      // io.fpu.ll_resp_pc := v.resp.bits.pc
     }
   }
 
@@ -1177,8 +1186,30 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.dmem.s1_data.data := (if (fLen == 0) mem_reg_rs2 else Mux(mem_ctrl.fp, Fill(coreDataBits / fLen, io.fpu.store_data), mem_reg_rs2))
   io.dmem.s1_data.mask := DontCare
 
+  // Save PC and instruction when issuing a load
+  when (io.dmem.req.fire && ex_ctrl.mem && isRead(ex_ctrl.mem_cmd)) {
+    ll_pc_tracker(ex_dcache_tag(5,1)) := ex_reg_pc
+    ll_inst_tracker(ex_dcache_tag(5,1)) := ex_reg_inst
+  }
+  
+  // Save PC and instruction when issuing a div/mul instruction
+  when (div.io.req.fire) {
+    ll_pc_tracker(ex_waddr) := ex_reg_pc
+    ll_inst_tracker(ex_waddr) := ex_reg_inst
+  }
+  
+  // Save PC and instruction when issuing a RoCC instruction
+  if (usingRoCC) {
+    when (io.rocc.cmd.fire) {
+      val rocc_rd = wb_reg_inst.asTypeOf(new RoCCInstruction()).rd
+      ll_pc_tracker(rocc_rd) := wb_reg_pc
+      ll_inst_tracker(rocc_rd) := wb_reg_inst
+    }
+  }
+
   io.dmem.s1_kill := killm_common || mem_ldst_xcpt || fpu_kill_mem || vec_kill_mem
   io.dmem.s2_kill := false.B
+  
   // don't let D$ go to sleep if we're probably going to use it soon
   io.dmem.keep_clock_enabled := ibuf.io.inst(0).valid && id_ctrl.mem && !csr.io.csr_stall
 
@@ -1234,6 +1265,25 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   coreMonitorBundle.priv_mode := csr.io.trace(0).priv
 
   if (enableCommitLog) {
+    val mem_store_valid = mem_reg_valid && mem_reg_store && !killm_common && !mem_ldst_xcpt && !fpu_kill_mem && !vec_kill_mem
+    val mem_store_addr = encodeVirtualAddress(mem_reg_wdata, mem_reg_wdata)
+    val mem_store_data = io.dmem.s1_data.data
+
+    // Track store information until writeback so exceptions can suppress the log.
+    val store_log_pending = RegInit(false.B)
+    val store_log_pc = Reg(UInt(vaddrBitsExtended.W))
+    val store_log_addr = Reg(UInt(vaddrBitsExtended.W))
+    val store_log_data = Reg(UInt(coreDataBits.W))
+
+    when (mem_store_valid) {
+      store_log_pending := true.B
+      store_log_pc := mem_reg_pc
+      store_log_addr := mem_store_addr
+      store_log_data := mem_store_data
+    }.elsewhen (wb_reg_valid && store_log_pending) {
+      store_log_pending := false.B
+    }
+
     val t = csr.io.trace(0)
     val rd = wb_waddr
     val wfd = wb_ctrl.wfd
@@ -1255,8 +1305,20 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       }
     }
 
+    when (store_log_pending && wb_reg_valid && wb_ctrl.mem && isWrite(wb_ctrl.mem_cmd) && !wb_xcpt) {
+      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", store_log_pc, store_log_addr, store_log_data, wb_reg_mem_size)
+    }
+
+    // Print exception information (not interrupts)
+    when (t.exception && !t.interrupt) {
+      printf ("%d 0x%x (0x%x) EXCEPTION cause=0x%x tval=0x%x\n", t.priv, t.iaddr, t.insn, t.cause, t.tval)
+    }
+
+    // Print long-latency X register writeback with tracked PC
     when (ll_wen && rf_waddr =/= 0.U) {
-      printf ("x%d p%d 0x%x\n", rf_waddr, rf_waddr, rf_wdata)
+      val ll_pc = ll_pc_tracker(rf_waddr)
+      val ll_inst = ll_inst_tracker(rf_waddr)
+      printf ("3 0x%x (0x%x) x%d 0x%x\n", ll_pc, ll_inst, rf_waddr, rf_wdata)
     }
   }
   else {

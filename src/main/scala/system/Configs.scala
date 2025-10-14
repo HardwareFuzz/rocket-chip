@@ -23,6 +23,9 @@ class BaseConfig extends Config(
 
 class DefaultConfig extends Config(new WithNBigCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
 
+// Config with Trace Core Ingress and FP logging enabled
+class DefaultConfigWithTrace extends Config(new freechips.rocketchip.rocket.WithTraceCoreIngress ++ new DefaultConfig)
+
 class DefaultBufferlessConfig extends Config(new WithBufferlessBroadcastHub ++ new DefaultConfig)
 class DefaultSmallConfig extends Config(new WithNSmallCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
 class DefaultRV32Config extends Config(new WithRV32 ++ new DefaultConfig)
@@ -105,3 +108,39 @@ class BaseFPGAConfig extends Config(new BaseConfig ++ new WithCoherentBusTopolog
 class DefaultFPGAConfig extends Config(new WithNSmallCores(1) ++ new BaseFPGAConfig)
 
 class CloneTileConfig extends Config(new WithCloneRocketTiles(7) ++ new WithNBigCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
+
+// Maximum extension configurations
+class MaxExtensionRV64Config extends Config(
+  new WithB ++
+  new WithFP16 ++
+  new WithHypervisor ++
+  new DefaultConfig
+)
+
+class MaxExtensionRV32Config extends Config(
+  new WithB ++
+  new WithFP16 ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+// Maximum extension configurations with commit log
+class MaxExtensionRV64ConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new WithFP16 ++
+  new WithHypervisor ++
+  new DefaultConfig
+)
+
+class MaxExtensionRV32ConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new WithFP16 ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
