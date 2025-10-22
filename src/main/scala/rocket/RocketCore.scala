@@ -306,6 +306,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val wb_reg_raw_inst = Reg(UInt())
   val wb_reg_wdata = Reg(Bits())
   val wb_reg_rs2 = Reg(Bits())
+  val wb_reg_store_data = Reg(Bits()) // Store data for logging
   val wb_reg_br_taken = Reg(Bool())
   val take_pc_wb = Wire(Bool())
   val wb_reg_wphit           = Reg(Vec(nBreakpoints, Bool()))
@@ -719,6 +720,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     wb_reg_wdata := Mux(!mem_reg_xcpt && mem_ctrl.fp && mem_ctrl.wxd, io.fpu.toint_data, mem_int_wdata)
     when (mem_ctrl.rocc || mem_reg_sfence || mem_reg_set_vconfig) {
       wb_reg_rs2 := mem_reg_rs2
+    }
+    when (mem_ctrl.mem && isWrite(mem_ctrl.mem_cmd)) {
+      // Save store data for logging
+      wb_reg_store_data := io.dmem.s1_data.data
     }
     wb_reg_cause := mem_cause
     wb_reg_inst := mem_reg_inst
@@ -1265,25 +1270,6 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   coreMonitorBundle.priv_mode := csr.io.trace(0).priv
 
   if (enableCommitLog) {
-    val mem_store_valid = mem_reg_valid && mem_reg_store && !killm_common && !mem_ldst_xcpt && !fpu_kill_mem && !vec_kill_mem
-    val mem_store_addr = encodeVirtualAddress(mem_reg_wdata, mem_reg_wdata)
-    val mem_store_data = io.dmem.s1_data.data
-
-    // Track store information until writeback so exceptions can suppress the log.
-    val store_log_pending = RegInit(false.B)
-    val store_log_pc = Reg(UInt(vaddrBitsExtended.W))
-    val store_log_addr = Reg(UInt(vaddrBitsExtended.W))
-    val store_log_data = Reg(UInt(coreDataBits.W))
-
-    when (mem_store_valid) {
-      store_log_pending := true.B
-      store_log_pc := mem_reg_pc
-      store_log_addr := mem_store_addr
-      store_log_data := mem_store_data
-    }.elsewhen (wb_reg_valid && store_log_pending) {
-      store_log_pending := false.B
-    }
-
     val t = csr.io.trace(0)
     val rd = wb_waddr
     val wfd = wb_ctrl.wfd
@@ -1305,8 +1291,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       }
     }
 
-    when (store_log_pending && wb_reg_valid && wb_ctrl.mem && isWrite(wb_ctrl.mem_cmd) && !wb_xcpt) {
-      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", store_log_pc, store_log_addr, store_log_data, wb_reg_mem_size)
+    // Print store information (only when no exception)
+    when (wb_reg_valid && wb_ctrl.mem && isWrite(wb_ctrl.mem_cmd) && !wb_xcpt) {
+      val store_addr = encodeVirtualAddress(wb_reg_wdata, wb_reg_wdata)
+      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", wb_reg_pc, store_addr, wb_reg_store_data, wb_reg_mem_size)
     }
 
     // Print exception information (not interrupts)
