@@ -289,6 +289,9 @@ done_processing:
       trace_count < async_reset_cycles*2 + sync_reset_cycles;
     done_reset = !tile->reset;
     tile->eval();
+    // Flush stdout after eval to ensure printf output is written immediately
+    // This prevents commit log messages from being lost due to buffering
+    fflush(stdout);
 #if VM_TRACE
     bool dump = tfp && trace_count >= start;
     if (dump)
@@ -297,6 +300,8 @@ done_processing:
 
     tile->clock = trace_count >= async_reset_cycles*2;
     tile->eval();
+    // Flush stdout after second eval as well
+    fflush(stdout);
 #if VM_TRACE
     if (dump)
       tfp->dump(static_cast<vluint64_t>(trace_count * 2 + 1));

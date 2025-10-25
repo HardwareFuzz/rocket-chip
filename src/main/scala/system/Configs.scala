@@ -130,6 +130,7 @@ class MaxExtensionRV32Config extends Config(
 class MaxExtensionRV64ConfigWithTrace extends Config(
   new freechips.rocketchip.rocket.WithTraceCoreIngress ++
   new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
   new WithFP16 ++
   new WithHypervisor ++
   new DefaultConfig
@@ -138,6 +139,7 @@ class MaxExtensionRV64ConfigWithTrace extends Config(
 class MaxExtensionRV32ConfigWithTrace extends Config(
   new freechips.rocketchip.rocket.WithTraceCoreIngress ++
   new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
   new WithFP16 ++
   new WithRV32 ++
   new WithNBigCores(1) ++
