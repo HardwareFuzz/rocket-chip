@@ -1294,7 +1294,9 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     // Print store information (only when no exception)
     when (t.valid && !t.exception && wb_ctrl.mem && isWrite(wb_ctrl.mem_cmd)) {
       val store_addr = encodeVirtualAddress(wb_reg_wdata, wb_reg_wdata)
-      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", wb_reg_pc, store_addr, wb_reg_store_data, wb_reg_mem_size)
+      // Use store_data from DCache response if available (for AMO instructions)
+      val actual_store_data = Mux(io.dmem.resp.valid, io.dmem.resp.bits.store_data, wb_reg_store_data)
+      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", wb_reg_pc, store_addr, actual_store_data, wb_reg_mem_size)
     }
 
     // Print exception information (not interrupts)
