@@ -671,6 +671,11 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     when (ex_ctrl.rxs2 && (ex_ctrl.mem || ex_ctrl.rocc || ex_sfence)) {
       val size = Mux(ex_ctrl.rocc, log2Ceil(xLen/8).U, ex_reg_mem_size)
       mem_reg_rs2 := new StoreGen(size, 0.U, ex_rs(1), coreDataBytes).data
+      // when (ex_ctrl.mem && isWrite(ex_ctrl.mem_cmd)) {
+      //   printf("ROCKET-DBG: EX store prep pc=0x%x inst=0x%x cmd=0x%x amo=%d addr=0x%x size=%d rs2=0x%x storeData=0x%x\n",
+      //     ex_reg_pc, ex_reg_inst, ex_ctrl.mem_cmd, isAMO(ex_ctrl.mem_cmd).asUInt,
+      //     io.dmem.req.bits.addr, ex_reg_mem_size, ex_rs(1), mem_reg_rs2)
+      // }
     }
     if (usingVector) { when (ex_reg_set_vconfig) {
       mem_reg_rs2 := ex_new_vconfig.get.asUInt
@@ -780,6 +785,11 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val dmem_resp_waddr = io.dmem.resp.bits.tag(5, 1)
   val dmem_resp_valid = io.dmem.resp.valid && io.dmem.resp.bits.has_data
   val dmem_resp_replay = dmem_resp_valid && io.dmem.resp.bits.replay
+  // when (io.dmem.resp.valid) {
+  //   printf("ROCKET-DBG: DMEM resp tag=0x%x cmd=0x%x addr=0x%x has_data=%d replay=%d store_data=0x%x\n",
+  //     io.dmem.resp.bits.tag, io.dmem.resp.bits.cmd, io.dmem.resp.bits.addr, io.dmem.resp.bits.has_data.asUInt,
+  //     io.dmem.resp.bits.replay.asUInt, io.dmem.resp.bits.store_data)
+  // }
 
   // Track PC and instruction for outstanding long-latency operations
   val ll_pc_tracker = Reg(Vec(32, UInt(vaddrBitsExtended.W)))
@@ -1188,8 +1198,16 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.dmem.req.bits.data := DontCare
   io.dmem.req.bits.mask := DontCare
 
+  val mem_store_addr = encodeVirtualAddress(mem_reg_wdata, mem_reg_wdata)
+  val mem_store_mask = new StoreGen(mem_reg_mem_size, mem_store_addr, 0.U(coreDataBits.W), coreDataBytes).mask
+
   io.dmem.s1_data.data := (if (fLen == 0) mem_reg_rs2 else Mux(mem_ctrl.fp, Fill(coreDataBits / fLen, io.fpu.store_data), mem_reg_rs2))
-  io.dmem.s1_data.mask := DontCare
+  io.dmem.s1_data.mask := Mux(mem_ctrl.mem && isWrite(mem_ctrl.mem_cmd), mem_store_mask, 0.U)
+  // when (io.dmem.req.fire && isWrite(ex_ctrl.mem_cmd)) {
+  //   printf("ROCKET-DBG: DMEM req fire pc=0x%x cmd=0x%x amo=%d addr=0x%x size=%d storeData=0x%x mask=0x%x rs2=0x%x tag=0x%x no_resp=%d\n",
+  //     ex_reg_pc, ex_ctrl.mem_cmd, isAMO(ex_ctrl.mem_cmd).asUInt, io.dmem.req.bits.addr, ex_reg_mem_size,
+  //     io.dmem.s1_data.data, mem_store_mask, mem_reg_rs2, io.dmem.req.bits.tag, io.dmem.req.bits.no_resp.asUInt)
+  // }
 
   // Save PC and instruction when issuing a load
   when (io.dmem.req.fire && ex_ctrl.mem && isRead(ex_ctrl.mem_cmd)) {
@@ -1296,7 +1314,17 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       val store_addr = encodeVirtualAddress(wb_reg_wdata, wb_reg_wdata)
       // Use store_data from DCache response if available (for AMO instructions)
       val actual_store_data = Mux(io.dmem.resp.valid, io.dmem.resp.bits.store_data, wb_reg_store_data)
-      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", wb_reg_pc, store_addr, actual_store_data, wb_reg_mem_size)
+      val store_default_mask = new StoreGen(wb_reg_mem_size, store_addr, 0.U(coreDataBits.W), coreDataBytes).mask
+      val resp_store_mask = Mux(io.dmem.resp.valid, io.dmem.resp.bits.mask, store_default_mask)
+      val store_byte_mask = FillInterleaved(8, resp_store_mask)
+      val masked_store_data = actual_store_data & store_byte_mask
+      val store_byte_offset = store_addr(log2Ceil(coreDataBytes)-1, 0)
+      val store_shift = (store_byte_offset << 3).asUInt
+      val store_effective_data = masked_store_data >> store_shift
+      // printf("ROCKET-DBG: WB store pc=0x%x cmd=0x%x amo=%d addr=0x%x actual=0x%x eff=0x%x latched=0x%x mask=0x%x respValid=%d respReplay=%d size=%d\n",
+      //   wb_reg_pc, wb_ctrl.mem_cmd, isAMO(wb_ctrl.mem_cmd).asUInt, store_addr, actual_store_data, store_effective_data,
+      //   wb_reg_store_data, resp_store_mask, io.dmem.resp.valid.asUInt, io.dmem.resp.bits.replay.asUInt, wb_reg_mem_size)
+      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", wb_reg_pc, store_addr, store_effective_data, wb_reg_mem_size)
     }
 
     // Print exception information (not interrupts)

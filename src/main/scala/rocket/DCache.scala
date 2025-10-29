@@ -496,6 +496,10 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   val pstore1_rmw = usingRMW.B && RegEnable(needsRead(s1_req), s1_valid_not_nacked && s1_write)
   val pstore1_merge_likely = s2_valid_not_nacked_in_s1 && s2_write && s2_store_merge
   val pstore1_merge = s2_store_valid && s2_store_merge
+  // when (s1_valid_not_nacked && s1_write) {
+  //   printf("DCACHE-DBG: S1 capture cmd=0x%x amo=%d addr=0x%x vaddr=0x%x data=0x%x mask=0x%x needsRead=%d hitWay=0x%x probeKill=%d\n",
+  //     s1_req.cmd, isAMO(s1_req.cmd).asUInt, s1_req.addr, s1_vaddr, io.cpu.s1_data.data, s1_mask, needsRead(s1_req).asUInt, s1_hit_way, s1_nack.asUInt)
+  // }
   val pstore2_valid = RegInit(false.B)
   val pstore_drain_opportunistic = !(io.cpu.req.valid && likelyNeedsRead(io.cpu.req.bits)) && !(s1_valid && s1_waw_hazard)
   val pstore_drain_on_miss = releaseInFlight || RegNext(io.cpu.s2_nack)
@@ -533,6 +537,11 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
     }
     mask
   }
+  // val advance_addr = Mux(s2_correct, s2_vaddr, pstore1_addr)
+  // when (advance_pstore1) {
+  //   printf("DCACHE-DBG: advance_pstore1 cmd=0x%x amo=%d addr=0x%x storegen=0x%x orig=0x%x mask=0x%x correct=%d merge=%d drain=%d\n",
+  //     pstore1_cmd, isAMO(pstore1_cmd).asUInt, advance_addr, pstore1_storegen_data, pstore1_data, pstore1_mask, s2_correct.asUInt, pstore1_merge.asUInt, pstore_drain.asUInt)
+  // }
   s2_store_merge := (if (eccBytes == 1) false.B else {
     ccover(pstore1_merge, "STORE_MERGED", "D$ store merged")
     // only merge stores to ECC granules that are already stored-to, to avoid
@@ -553,6 +562,11 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
     FillInterleaved(wordBytes/subWordBytes, wordMask) & Fill(rowBytes/wordBytes, eccMask)
   }
   dataArb.io.in(0).bits.eccMask := eccMask(Mux(pstore2_valid, pstore2_storegen_mask, pstore1_mask))
+  // when (dataArb.io.in(0).fire) {
+  //   printf("DCACHE-DBG: dataArb fire drain=%d usePstore2=%d addr=0x%x wdata=0x%x wordMask=0x%x eccMask=0x%x finalMask=0x%x amo=%d\n",
+  //     pstore_drain.asUInt, pstore2_valid.asUInt, dataArb.io.in(0).bits.addr, dataArb.io.in(0).bits.wdata, dataArb.io.in(0).bits.wordMask, dataArb.io.in(0).bits.eccMask,
+  //     Mux(pstore2_valid, pstore2_storegen_mask, pstore1_mask), isAMO(pstore1_cmd).asUInt)
+  // }
 
   // store->load RAW hazard detection
   def s1Depends(addr: UInt, mask: UInt) =
@@ -627,6 +641,8 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   // Set pending bits for outstanding TileLink transaction
   val a_sel = UIntToOH(a_source, maxUncachedInFlight+mmioOffset) >> mmioOffset
   when (tl_out_a.fire) {
+    // printf("DCACHE-DBG: TL-A fire cmd=0x%x amo=%d uncached=%d addr=0x%x data=0x%x mask=0x%x read=%d write=%d pstoreData=0x%x storegen=0x%x\n",
+    //   s2_req.cmd, isAMO(s2_req.cmd).asUInt, s2_uncached.asUInt, s2_req.addr, a_data, a_mask, s2_read.asUInt, s2_write.asUInt, pstore1_data, pstore1_storegen_data)
     when (s2_uncached) {
       (a_sel.asBools zip (uncachedInFlight zip uncachedReqs)) foreach { case (s, (f, r)) =>
         when (s) {
@@ -973,6 +989,11 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   io.cpu.resp.bits.data_word_bypass := loadgen.wordData
   io.cpu.resp.bits.data_raw := s2_data_word
   io.cpu.resp.bits.store_data := Mux(isAMO(pstore1_cmd), pstore1_storegen_data, pstore1_data)
+  io.cpu.resp.bits.mask := Mux(isWrite(s2_req.cmd), pstore1_mask, 0.U(wordBytes.W))
+  // when (io.cpu.resp.valid && isWrite(s2_req.cmd)) {
+  //   printf("DCACHE-DBG: resp valid cmd=0x%x amo=%d addr=0x%x store_data=0x%x raw=0x%x storegen=0x%x pstore1_valid=%d pstore2_valid=%d hit=%d uncached=%d\n",
+  //     s2_req.cmd, isAMO(s2_req.cmd).asUInt, s2_req.addr, io.cpu.resp.bits.store_data, pstore1_data, pstore1_storegen_data, pstore1_valid.asUInt, pstore2_valid.asUInt, s2_hit.asUInt, s2_uncached.asUInt)
+  // }
 
   // AMOs
   if (usingRMW) {
@@ -991,6 +1012,10 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   } else if (!usingAtomics) {
     assert(!(s1_valid_masked && s1_read && s1_write), "unsupported D$ operation")
   }
+  // when ((pstore1_valid || pstore1_valid_likely) && isAMO(pstore1_cmd)) {
+  //   printf("DCACHE-DBG: AMO combine cmd=0x%x addr=0x%x lhs=0x%x rhs=0x%x storegen=0x%x mask=0x%x valid=%d likely=%d\n",
+  //     pstore1_cmd, pstore1_addr, s2_data_word, pstore1_data, pstore1_storegen_data, pstore1_mask, pstore1_valid.asUInt, pstore1_valid_likely.asUInt)
+  // }
 
   if (coreParams.useVector) {
     edge.manager.managers.foreach { m =>

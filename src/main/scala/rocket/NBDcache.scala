@@ -735,6 +735,10 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   val s1_replay = RegInit(false.B)
   val s1_clk_en = Reg(Bool())
   val s1_sfence = s1_req.cmd === M_SFENCE
+  // when (io.cpu.req.fire && isWrite(io.cpu.req.bits.cmd)) {
+  //   printf("NBDCACHE-DBG: S0 fire cmd=0x%x amo=%d addr=0x%x data=0x%x size=%d phys=%d no_resp=%d\n",
+  //     io.cpu.req.bits.cmd, isAMO(io.cpu.req.bits.cmd).asUInt, io.cpu.req.bits.addr, io.cpu.s1_data.data, io.cpu.req.bits.size, io.cpu.req.bits.phys, io.cpu.req.bits.no_resp.asUInt)
+  // }
 
   val s2_valid = RegNext(s1_valid_masked && !s1_sfence, false.B) && !io.cpu.s2_xcpt.asUInt.orR
   val s2_tlb_req_valid = RegNext(s1_tlb_req_valid, false.B)
@@ -796,6 +800,7 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
 
   io.tlb_port.s1_resp := dtlb.io.resp
 
+  val s1_store_data = Mux(s1_replay, mshrs.io.replay.bits.data, io.cpu.s1_data.data)
   when (s1_clk_en) {
     s2_req.size := s1_req.size
     s2_req.signed := s1_req.signed
@@ -803,12 +808,16 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
     s2_req.addr := s1_addr
     s2_req.no_resp := s1_req.no_resp
     when (s1_write) {
-      s2_req.data := Mux(s1_replay, mshrs.io.replay.bits.data, io.cpu.s1_data.data)
+      s2_req.data := s1_store_data
     }
     when (s1_recycled) { s2_req.data := s1_req.data }
     s2_req.tag := s1_req.tag
     s2_req.cmd := s1_req.cmd
   }
+  // when (s1_clk_en && s1_write) {
+  //   printf("NBDCACHE-DBG: S1 latch cmd=0x%x amo=%d addr=0x%x data=0x%x size=%d replay=%d recycled=%d\n",
+  //     s1_req.cmd, isAMO(s1_req.cmd).asUInt, s1_addr, s1_store_data, s1_req.size, s1_replay.asUInt, s1_recycled.asUInt)
+  // }
 
   // tags
   def onReset = L1Metadata(0.U, ClientMetadata.onReset)
@@ -907,6 +916,8 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
     s3_req := s2_req
     s3_req.data := Mux(s2_data_correctable, s2_data_corrected, amoalu.io.out)
     s3_way := s2_tag_match_way
+    // printf("NBDCACHE-DBG: S2 stage cmd=0x%x amo=%d addr=0x%x dataIn=0x%x corrected=0x%x correctable=%d hit=%d replay=%d sc_fail=%d\n",
+    //   s2_req.cmd, isAMO(s2_req.cmd).asUInt, s2_req.addr, s2_req.data, s2_data_corrected, s2_data_correctable, s2_hit.asUInt, s2_replay.asUInt, s2_sc_fail.asUInt)
   }
 
   writeArb.io.in(0).bits.addr := s3_req.addr
@@ -914,6 +925,10 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   writeArb.io.in(0).bits.data := Fill(rowWords, s3_req.data)
   writeArb.io.in(0).valid := s3_valid
   writeArb.io.in(0).bits.way_en :=  s3_way
+  // when (writeArb.io.in(0).fire) {
+  //   printf("NBDCACHE-DBG: writeArb fire cmd=0x%x amo=%d addr=0x%x way=0x%x data=0x%x correctable=%d replay=%d\n",
+  //     s3_req.cmd, isAMO(s3_req.cmd).asUInt, s3_req.addr, s3_way, s3_req.data, s2_data_correctable, s2_replay.asUInt)
+  // }
 
   // replacement policy
   val replacer = cacheParams.replacement
@@ -1000,6 +1015,10 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   val s2_data_word_prebypass = s2_data_uncorrected >> Cat(s2_word_idx, 0.U(log2Up(coreDataBits).W))
   val s2_data_word = Mux(s2_store_bypass, s2_store_bypass_data, s2_data_word_prebypass)
   val loadgen = new LoadGen(s2_req.size, s2_req.signed, s2_req.addr, s2_data_word, s2_sc, wordBytes)
+  // when ((s2_valid || s2_replay) && isAMO(s2_req.cmd)) {
+  //   printf("NBDCACHE-DBG: AMO operands lhs=0x%x rhs=0x%x mask=0x%x bypass=%d out=0x%x storeBypass=%d\n",
+  //     s2_data_word, s2_req.data, new StoreGen(s2_req.size, s2_req.addr, 0.U, xLen/8).mask, s2_store_bypass.asUInt, amoalu.io.out, s2_store_bypass.asUInt)
+  // }
 
   amoalu.io.mask := new StoreGen(s2_req.size, s2_req.addr, 0.U, xLen/8).mask
   amoalu.io.cmd := s2_req.cmd
@@ -1040,11 +1059,17 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   cache_resp.bits.dv := s2_req.dv
   cache_resp.bits.data_word_bypass := loadgen.wordData
   cache_resp.bits.data_raw := s2_data_word
-  cache_resp.bits.mask := s2_req.mask
+  val s2_store_mask = new StoreGen(s2_req.size, s2_req.addr, 0.U(xLen.W), xLen/8).mask
+  cache_resp.bits.mask := Mux(isWrite(s2_req.cmd), s2_store_mask, 0.U((xLen/8).W))
   cache_resp.bits.has_data := isRead(s2_req.cmd)
   cache_resp.bits.data := loadgen.data | s2_sc_fail
   cache_resp.bits.store_data := s2_req.data
   cache_resp.bits.replay := s2_replay
+  // when (cache_resp.valid && isWrite(cache_resp.bits.cmd)) {
+  //   printf("NBDCACHE-DBG: cache_resp cmd=0x%x amo=%d addr=0x%x store_data=0x%x size=%d replay=%d sc_fail=%d hit=%d\n",
+  //     cache_resp.bits.cmd, isAMO(cache_resp.bits.cmd).asUInt, cache_resp.bits.addr, cache_resp.bits.store_data,
+  //     cache_resp.bits.size, cache_resp.bits.replay.asUInt, s2_sc_fail.asUInt, s2_hit.asUInt)
+  // }
 
   val uncache_resp = Wire(Valid(new HellaCacheResp))
   uncache_resp.bits := mshrs.io.resp.bits
@@ -1055,6 +1080,11 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   io.cpu.resp := Mux(mshrs.io.resp.ready, uncache_resp, cache_resp)
   io.cpu.resp.bits.data_word_bypass := loadgen.wordData
   io.cpu.resp.bits.data_raw := s2_data_word
+  // when (io.cpu.resp.valid && isWrite(io.cpu.resp.bits.cmd)) {
+  //   printf("NBDCACHE-DBG: resp out cmd=0x%x amo=%d addr=0x%x store_data=0x%x replay=%d uncachedReady=%d\n",
+  //     io.cpu.resp.bits.cmd, isAMO(io.cpu.resp.bits.cmd).asUInt, io.cpu.resp.bits.addr, io.cpu.resp.bits.store_data,
+  //     io.cpu.resp.bits.replay.asUInt, mshrs.io.resp.ready.asUInt)
+  // }
   io.cpu.ordered := mshrs.io.fence_rdy && !s1_valid && !s2_valid
   io.cpu.store_pending := mshrs.io.store_pending
   io.cpu.replay_next := (s1_replay && s1_read) || mshrs.io.replay_next

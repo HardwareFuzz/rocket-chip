@@ -106,4 +106,11 @@ class AMOALU(operandBits: Int)(implicit p: Parameters) extends Module {
   val wmask = FillInterleaved(8, io.mask)
   io.out := wmask & out | ~wmask & io.lhs
   io.out_unmasked := out
+
+  // val swap = io.cmd === M_XA_SWAP
+  // val amoActive = swap || add || logic_and || logic_xor || max || min
+  // when (amoActive) {
+  //   printf("AMOALU-DBG: mask=0x%x cmd=0x%x lhs=0x%x rhs=0x%x wmask=0x%x adder_out=0x%x less=%d minmax=0x%x logic=0x%x out=0x%x out_unmasked=0x%x\n",
+  //     io.mask, io.cmd, io.lhs, io.rhs, wmask, adder_out, less.asUInt, minmax, logic, io.out, io.out_unmasked)
+  // }
 }
