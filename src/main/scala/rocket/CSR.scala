@@ -480,43 +480,43 @@ class CSRFile(
   }
 
   val reg_debug = RegInit(false.B)
-  val reg_dpc = Reg(UInt(vaddrBitsExtended.W))
-  val reg_dscratch0 = Reg(UInt(xLen.W))
-  val reg_dscratch1 = (p(DebugModuleKey).map(_.nDscratch).getOrElse(1) > 1).option(Reg(UInt(xLen.W)))
-  val reg_singleStepped = Reg(Bool())
+  val reg_dpc = RegInit(0.U(vaddrBitsExtended.W))
+  val reg_dscratch0 = RegInit(0.U(xLen.W))
+  val reg_dscratch1 = (p(DebugModuleKey).map(_.nDscratch).getOrElse(1) > 1).option(RegInit(0.U(xLen.W)))
+  val reg_singleStepped = RegInit(false.B)
 
   val reg_mcontext = (coreParams.mcontextWidth > 0).option(RegInit(0.U(coreParams.mcontextWidth.W)))
   val reg_scontext = (coreParams.scontextWidth > 0).option(RegInit(0.U(coreParams.scontextWidth.W)))
 
-  val reg_tselect = Reg(UInt(log2Up(nBreakpoints).W))
-  val reg_bp = Reg(Vec(1 << log2Up(nBreakpoints), new BP))
-  val reg_pmp = Reg(Vec(nPMPs, new PMPReg))
+  val reg_tselect = RegInit(0.U(log2Up(nBreakpoints).W))
+  val reg_bp = RegInit(VecInit(Seq.fill(1 << log2Up(nBreakpoints))(0.U.asTypeOf(new BP))))
+  val reg_pmp = RegInit(VecInit(Seq.fill(nPMPs)(0.U.asTypeOf(new PMPReg))))
 
-  val reg_mie = Reg(UInt(xLen.W))
+  val reg_mie = RegInit(0.U(xLen.W))
   val (reg_mideleg, read_mideleg) = {
-    val reg = Reg(UInt(xLen.W))
+    val reg = RegInit(0.U(xLen.W))
     (reg, Mux(usingSupervisor.B, reg & delegable_interrupts | mideleg_always_hs, 0.U))
   }
   val (reg_medeleg, read_medeleg) = {
-    val reg = Reg(UInt(xLen.W))
+    val reg = RegInit(0.U(xLen.W))
     (reg, Mux(usingSupervisor.B, reg & delegable_exceptions, 0.U))
   }
-  val reg_mip = Reg(new MIP)
-  val reg_mepc = Reg(UInt(vaddrBitsExtended.W))
+  val reg_mip = RegInit(0.U.asTypeOf(new MIP))
+  val reg_mepc = RegInit(0.U(vaddrBitsExtended.W))
   val reg_mcause = RegInit(0.U(xLen.W))
-  val reg_mtval = Reg(UInt(vaddrBitsExtended.W))
-  val reg_mtval2 = Reg(UInt(((maxSVAddrBits + 1) min xLen).W))
-  val reg_mscratch = Reg(Bits(xLen.W))
+  val reg_mtval = RegInit(0.U(vaddrBitsExtended.W))
+  val reg_mtval2 = RegInit(0.U(((maxSVAddrBits + 1) min xLen).W))
+  val reg_mscratch = RegInit(0.U(xLen.W))
   val mtvecWidth = paddrBits min xLen
   val reg_mtvec = mtvecInit match {
     case Some(addr) => RegInit(addr.U(mtvecWidth.W))
-    case None => Reg(UInt(mtvecWidth.W))
+    case None => RegInit(0.U(mtvecWidth.W))
   }
 
   val reset_mnstatus = WireDefault(0.U.asTypeOf(new MNStatus()))
   reset_mnstatus.mpp := PRV.M.U
-  val reg_mnscratch = Reg(Bits(xLen.W))
-  val reg_mnepc = Reg(UInt(vaddrBitsExtended.W))
+  val reg_mnscratch = RegInit(0.U(xLen.W))
+  val reg_mnepc = RegInit(0.U(vaddrBitsExtended.W))
   val reg_mncause = RegInit(0.U(xLen.W))
   val reg_mnstatus = RegInit(reset_mnstatus)
   val reg_rnmie = RegInit(true.B)
@@ -528,61 +528,61 @@ class CSRFile(
 
   val delegable_counters = ((BigInt(1) << (nPerfCounters + CSR.firstHPM)) - 1).U
   val (reg_mcounteren, read_mcounteren) = {
-    val reg = Reg(UInt(32.W))
+    val reg = RegInit(0.U(32.W))
     (reg, Mux(usingUser.B, reg & delegable_counters, 0.U))
   }
   val (reg_scounteren, read_scounteren) = {
-    val reg = Reg(UInt(32.W))
+    val reg = RegInit(0.U(32.W))
     (reg, Mux(usingSupervisor.B, reg & delegable_counters, 0.U))
   }
 
   val (reg_hideleg, read_hideleg) = {
-    val reg = Reg(UInt(xLen.W))
+    val reg = RegInit(0.U(xLen.W))
     (reg, Mux(usingHypervisor.B, reg & hs_delegable_interrupts, 0.U))
   }
   val (reg_hedeleg, read_hedeleg) = {
-    val reg = Reg(UInt(xLen.W))
+    val reg = RegInit(0.U(xLen.W))
     (reg, Mux(usingHypervisor.B, reg & hs_delegable_exceptions, 0.U))
   }
   val hs_delegable_counters = delegable_counters
   val (reg_hcounteren, read_hcounteren) = {
-    val reg = Reg(UInt(32.W))
+    val reg = RegInit(0.U(32.W))
     (reg, Mux(usingHypervisor.B, reg & hs_delegable_counters, 0.U))
   }
   val reg_hstatus = RegInit(0.U.asTypeOf(new HStatus))
-  val reg_hgatp = Reg(new PTBR)
-  val reg_htval = Reg(reg_mtval2.cloneType)
+  val reg_hgatp = RegInit(0.U.asTypeOf(new PTBR))
+  val reg_htval = RegInit(0.U.asTypeOf(reg_mtval2.cloneType))
   val read_hvip = reg_mip.asUInt & hs_delegable_interrupts
   val read_hie = reg_mie & hs_delegable_interrupts
 
   val (reg_vstvec, read_vstvec) = {
-    val reg = Reg(UInt(vaddrBitsExtended.W))
+    val reg = RegInit(0.U(vaddrBitsExtended.W))
     (reg, formTVec(reg).sextTo(xLen))
   }
-  val reg_vsstatus = Reg(new MStatus)
-  val reg_vsscratch = Reg(Bits(xLen.W))
-  val reg_vsepc = Reg(UInt(vaddrBitsExtended.W))
-  val reg_vscause = Reg(Bits(xLen.W))
-  val reg_vstval = Reg(UInt(vaddrBitsExtended.W))
-  val reg_vsatp = Reg(new PTBR)
+  val reg_vsstatus = RegInit(0.U.asTypeOf(new MStatus))
+  val reg_vsscratch = RegInit(0.U(xLen.W))
+  val reg_vsepc = RegInit(0.U(vaddrBitsExtended.W))
+  val reg_vscause = RegInit(0.U(xLen.W))
+  val reg_vstval = RegInit(0.U(vaddrBitsExtended.W))
+  val reg_vsatp = RegInit(0.U.asTypeOf(new PTBR))
 
-  val reg_sepc = Reg(UInt(vaddrBitsExtended.W))
-  val reg_scause = Reg(Bits(xLen.W))
-  val reg_stval = Reg(UInt(vaddrBitsExtended.W))
-  val reg_sscratch = Reg(Bits(xLen.W))
-  val reg_stvec = Reg(UInt((if (usingHypervisor) vaddrBitsExtended else vaddrBits).W))
-  val reg_satp = Reg(new PTBR)
+  val reg_sepc = RegInit(0.U(vaddrBitsExtended.W))
+  val reg_scause = RegInit(0.U(xLen.W))
+  val reg_stval = RegInit(0.U(vaddrBitsExtended.W))
+  val reg_sscratch = RegInit(0.U(xLen.W))
+  val reg_stvec = RegInit(0.U((if (usingHypervisor) vaddrBitsExtended else vaddrBits).W))
+  val reg_satp = RegInit(0.U.asTypeOf(new PTBR))
   val reg_wfi = withClock(io.ungated_clock) { RegInit(false.B) }
 
-  val reg_fflags = Reg(UInt(5.W))
-  val reg_frm = Reg(UInt(3.W))
-  val reg_vconfig = usingVector.option(Reg(new VConfig))
-  val reg_vstart = usingVector.option(Reg(UInt(maxVLMax.log2.W)))
-  val reg_vxsat = usingVector.option(Reg(Bool()))
-  val reg_vxrm = usingVector.option(Reg(UInt(io.vector.get.vxrm.getWidth.W)))
+  val reg_fflags = RegInit(0.U(5.W))
+  val reg_frm = RegInit(0.U(3.W))
+  val reg_vconfig = usingVector.option(RegInit(0.U.asTypeOf(new VConfig)))
+  val reg_vstart = usingVector.option(RegInit(0.U(maxVLMax.log2.W)))
+  val reg_vxsat = usingVector.option(RegInit(false.B))
+  val reg_vxrm = usingVector.option(RegInit(0.U(io.vector.get.vxrm.getWidth.W)))
 
-  val reg_mtinst_read_pseudo = Reg(Bool())
-  val reg_htinst_read_pseudo = Reg(Bool())
+  val reg_mtinst_read_pseudo = RegInit(false.B)
+  val reg_htinst_read_pseudo = RegInit(false.B)
   // XLEN=32: 0x00002000
   // XLEN=64: 0x00003000
   val Seq(read_mtinst, read_htinst) = Seq(reg_mtinst_read_pseudo, reg_htinst_read_pseudo).map(r => Cat(r, (xLen == 32).option(0.U).getOrElse(r), 0.U(12.W)))

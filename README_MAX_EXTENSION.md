@@ -26,6 +26,7 @@
 **特性:**
 - ✅ 32位RISC-V ISA (RV32IMAFDC)
 - ✅ B扩展 (Zba + Zbb + Zbs)
+- ✅ D扩展 - 64位双精度浮点 (FLEN = 64)
 - ✅ FP16支持 - 半精度浮点
 - ✅ SV32虚拟内存
 - ✅ Commit Log - 完整的指令执行日志

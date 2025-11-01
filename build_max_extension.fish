@@ -7,6 +7,7 @@
 set -g SCRIPT_DIR (dirname (status -f))
 set -g PROJECT_ROOT $SCRIPT_DIR
 set -g BUILD_DIR $PROJECT_ROOT/out
+set -g RESULT_DIR $PROJECT_ROOT/build_result
 
 # Color output
 set -g RED '\033[0;31m'
@@ -43,12 +44,10 @@ function show_usage
     echo "Usage: $argv[1] [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --rv64          Build RV64 configuration (default)"
+    echo "  --rv64          Build RV64 configuration"
     echo "  --rv32          Build RV32 configuration"
-    echo "  --both          Build both RV64 and RV32"
-    echo "  --verilog       Generate Verilog only"
-    echo "  --emulator      Build Verilator emulator"
-    echo "  --all           Generate Verilog and build emulator (default)"
+    echo "  --rv32-no-d     Build RV32 configuration without the D extension"
+    echo "  --all           Build all configurations"
     echo "  --clean         Clean build directory first"
     echo "  --help, -h      Show this help message"
     echo ""
@@ -68,25 +67,31 @@ function show_usage
     echo "    - FP16 support"
     echo "    - Commit log enabled"
     echo ""
+    echo "  RV32 (No D): MaxExtensionRV32NoDConfigWithTrace"
+    echo "    - 32-bit RISC-V"
+    echo "    - B extension (Zba, Zbb, Zbs)"
+    echo "    - Zicond extension (czero.eqz, czero.nez)"
+    echo "    - FP16 support"
+    echo "    - D extension disabled"
+    echo "    - Commit log enabled"
+    echo ""
     echo "Examples:"
-    echo "  $argv[1]                    # Build RV64 (Verilog + Emulator)"
-    echo "  $argv[1] --rv32 --verilog   # Generate RV32 Verilog only"
-    echo "  $argv[1] --both --all       # Build both RV64 and RV32"
+    echo "  $argv[1] --rv64             # Build RV64 only"
+    echo "  $argv[1] --rv32-no-d        # Build RV32 (No D) only"
+    echo "  $argv[1] --all              # Build all configurations"
     echo ""
 end
 
 # Parse arguments
-set -g ARCH "rv64"
 set -g BUILD_VERILOG 1
 set -g BUILD_EMULATOR 1
 set -g CLEAN_FIRST 0
-set -g BUILD_BOTH 0
+set -g TARGETS
+set -g ALL_SELECTED 0
 
 if test (count $argv) -eq 0
     # Default: build RV64, verilog + emulator
-    set ARCH "rv64"
-    set BUILD_VERILOG 1
-    set BUILD_EMULATOR 1
+    set -g TARGETS rv64
 else
     for arg in $argv
         switch $arg
@@ -94,20 +99,20 @@ else
                 show_usage (status -f)
                 exit 0
             case '--rv64'
-                set ARCH "rv64"
+                if not contains -- "rv64" $TARGETS
+                    set -ag TARGETS "rv64"
+                end
             case '--rv32'
-                set ARCH "rv32"
-            case '--both'
-                set BUILD_BOTH 1
-            case '--verilog'
-                set BUILD_VERILOG 1
-                set BUILD_EMULATOR 0
-            case '--emulator'
-                set BUILD_VERILOG 0
-                set BUILD_EMULATOR 1
+                if not contains -- "rv32" $TARGETS
+                    set -ag TARGETS "rv32"
+                end
+            case '--rv32-no-d'
+                if not contains -- "rv32-no-d" $TARGETS
+                    set -ag TARGETS "rv32-no-d"
+                end
             case '--all'
-                set BUILD_VERILOG 1
-                set BUILD_EMULATOR 1
+                set -g TARGETS rv64 rv32 rv32-no-d
+                set -g ALL_SELECTED 1
             case '--clean'
                 set CLEAN_FIRST 1
             case '*'
@@ -116,11 +121,18 @@ else
                 exit 1
         end
     end
+    
+    if test $ALL_SELECTED -eq 1
+        # already set to all targets
+    else if test (count $TARGETS) -eq 0
+        set -g TARGETS rv64
+    end
 end
 
 function build_config
     set config $argv[1]
     set arch $argv[2]
+    set artifact $argv[3]
     
     print_info "Building configuration: $config ($arch)"
     
@@ -166,6 +178,15 @@ function build_config
                 print_success "Emulator binary: $emulator_path"
                 set size (du -h $emulator_path | cut -f1)
                 print_info "Binary size: $size"
+                
+                if test -n "$artifact"
+                    if not test -d $RESULT_DIR
+                        mkdir -p $RESULT_DIR
+                    end
+                    set dest_path "$RESULT_DIR/$artifact"
+                    cp -f $emulator_path $dest_path
+                    print_success "Copied emulator to $dest_path"
+                end
             end
         else
             print_error "Emulator build failed for $config"
@@ -196,28 +217,46 @@ end
 
 # Build configurations
 set -g FAILED_BUILDS
+set -g DID_BUILD_RV64 0
+set -g DID_BUILD_RV32 0
+set -g DID_BUILD_RV32_NO_D 0
 
-if test $BUILD_BOTH -eq 1
-    print_info "Building both RV64 and RV32 configurations"
-    
-    if not build_config "MaxExtensionRV64ConfigWithTrace" "RV64"
-        set -a FAILED_BUILDS "RV64"
+set last_target $TARGETS[-1]
+
+for target in $TARGETS
+    switch $target
+        case 'rv64'
+            set config "MaxExtensionRV64ConfigWithTrace"
+            set label "RV64"
+            set artifact "rocket_rv64"
+        case 'rv32'
+            set config "MaxExtensionRV32ConfigWithTrace"
+            set label "RV32"
+            set artifact "rocket_rv32"
+        case 'rv32-no-d'
+            set config "MaxExtensionRV32NoDConfigWithTrace"
+            set label "RV32 (No D)"
+            set artifact "rocket_rv32_no_d"
+        case '*'
+            print_warning "Unknown build target: $target (skipping)"
+            continue
     end
-    
-    echo ""
-    
-    if not build_config "MaxExtensionRV32ConfigWithTrace" "RV32"
-        set -a FAILED_BUILDS "RV32"
+
+    if not build_config $config "$label" "$artifact"
+        set -a FAILED_BUILDS "$label"
+    else
+        switch $target
+            case 'rv64'
+                set DID_BUILD_RV64 1
+            case 'rv32'
+                set DID_BUILD_RV32 1
+            case 'rv32-no-d'
+                set DID_BUILD_RV32_NO_D 1
+        end
     end
-else
-    if test $ARCH = "rv64"
-        if not build_config "MaxExtensionRV64ConfigWithTrace" "RV64"
-            set -a FAILED_BUILDS "RV64"
-        end
-    else if test $ARCH = "rv32"
-        if not build_config "MaxExtensionRV32ConfigWithTrace" "RV32"
-            set -a FAILED_BUILDS "RV32"
-        end
+
+    if test "$target" != "$last_target"
+        echo ""
     end
 end
 
@@ -232,11 +271,14 @@ if test (count $FAILED_BUILDS) -eq 0
     echo ""
     print_info "Next steps:"
     echo "  1. Run tests with the emulator:"
-    if test $BUILD_BOTH -eq 1; or test $ARCH = "rv64"
+    if test $DID_BUILD_RV64 -eq 1
         echo "     \$BUILD_DIR/emulator/.../MaxExtensionRV64ConfigWithTrace/.../emulator <test.riscv>"
     end
-    if test $BUILD_BOTH -eq 1; or test $ARCH = "rv32"
+    if test $DID_BUILD_RV32 -eq 1
         echo "     \$BUILD_DIR/emulator/.../MaxExtensionRV32ConfigWithTrace/.../emulator <test.riscv>"
+    end
+    if test $DID_BUILD_RV32_NO_D -eq 1
+        echo "     \$BUILD_DIR/emulator/.../MaxExtensionRV32NoDConfigWithTrace/.../emulator <test.riscv>"
     end
     echo ""
     echo "  2. View commit logs:"
@@ -248,6 +290,9 @@ if test (count $FAILED_BUILDS) -eq 0
     echo ""
     echo "  3. For Verilog simulation, use the generated .v/.sv files in:"
     echo "     \$BUILD_DIR/emulator/.../mfccompiler/compile.dest/"
+    echo ""
+    echo "  4. Emulator binaries copied to:"
+    echo "     $RESULT_DIR"
     echo ""
     exit 0
 else

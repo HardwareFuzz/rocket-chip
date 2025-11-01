@@ -5,7 +5,7 @@ package freechips.rocketchip.system
 
 import org.chipsalliance.cde.config.Config
 import freechips.rocketchip.subsystem._
-import freechips.rocketchip.rocket.{WithNBigCores, WithNMedCores, WithNSmallCores, WithRV32, WithFP16, WithHypervisor, With1TinyCore, WithScratchpadsOnly, WithCloneRocketTiles, WithB}
+import freechips.rocketchip.rocket.{WithNBigCores, WithNMedCores, WithNSmallCores, WithRV32, WithRV32DoublePrecision, WithFP16, WithHypervisor, With1TinyCore, WithScratchpadsOnly, WithCloneRocketTiles, WithB}
 
 class WithJtagDTMSystem extends freechips.rocketchip.subsystem.WithJtagDTM
 class WithDebugSBASystem extends freechips.rocketchip.subsystem.WithDebugSBA
@@ -120,6 +120,16 @@ class MaxExtensionRV64Config extends Config(
 class MaxExtensionRV32Config extends Config(
   new WithB ++
   new WithFP16 ++
+  new WithRV32DoublePrecision ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class MaxExtensionRV32NoDConfig extends Config(
+  new WithB ++
+  new WithFP16 ++
   new WithRV32 ++
   new WithNBigCores(1) ++
   new WithCoherentBusTopology ++
@@ -137,6 +147,18 @@ class MaxExtensionRV64ConfigWithTrace extends Config(
 )
 
 class MaxExtensionRV32ConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithRV32DoublePrecision ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class MaxExtensionRV32NoDConfigWithTrace extends Config(
   new freechips.rocketchip.rocket.WithTraceCoreIngress ++
   new WithB ++
   new freechips.rocketchip.rocket.WithConditionalZero ++

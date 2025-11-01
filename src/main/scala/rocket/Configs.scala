@@ -268,6 +268,10 @@ class WithRV32 extends RocketCoreConfig(c => c.copy(
   mulDiv = Some(MulDivParams(mulUnroll = 8))
 ))
 
+class WithRV32DoublePrecision extends RocketCoreConfig(c =>
+  c.copy(fpu = c.fpu.map(_.copy(fLen = 64)))
+)
+
 class WithoutVM                                           extends RocketCoreConfig(_.copy(useVM = false))
 class WithCFlushEnabled                                   extends RocketCoreConfig(_.copy(haveCFlush = true))
 class WithNBreakpoints(hwbp: Int)                         extends RocketCoreConfig(_.copy(nBreakpoints = hwbp))
@@ -334,4 +338,3 @@ class WithCloneRocketTiles(
   }
   case NumTiles => up(NumTiles) + n
 })
-
