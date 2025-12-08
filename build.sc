@@ -304,6 +304,15 @@ trait Emulator extends Cross.Module2[String, String] {
     }
 
     def verilatorArgs = T.input {
+      val coverageEnabled = sys.env.get("VERILATOR_COVERAGE").exists { v =>
+        val lower = v.toLowerCase(java.util.Locale.ROOT)
+        lower == "1" || lower == "true" || lower == "yes"
+      }
+      val extraArgs = sys.env
+        .get("VERILATOR_EXTRA_ARGS")
+        .toSeq
+        .flatMap(_.split("\\s+").filter(_.nonEmpty))
+
       Seq(
         // format: off
         "-Wno-UNOPTTHREADS", "-Wno-STMTDLY", "-Wno-LATCH", "-Wno-WIDTH", "--no-timing",
@@ -316,7 +325,7 @@ trait Emulator extends Cross.Module2[String, String] {
         "--max-num-width 1048576",
         s"-I${vsrcDir().path}",
         // format: on
-      )
+      ) ++ (if (coverageEnabled) Seq("--coverage") else Seq.empty) ++ extraArgs
     }
 
     def cmakefileLists = T.persistent {

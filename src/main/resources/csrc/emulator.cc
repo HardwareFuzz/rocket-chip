@@ -6,6 +6,9 @@
 #include <memory>
 #include "verilated_vcd_c.h"
 #endif
+#if VM_COVERAGE
+#include "verilated_cov.h"
+#endif
 #include <fesvr/dtm.h>
 #include "remote_bitbang.h"
 #include <iostream>
@@ -15,6 +18,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <cstring>
 
 // For option parsing, which is split across this file, Verilog, and
 // FESVR's HTIF, a few external files must be pulled in. The list of
@@ -75,6 +79,10 @@ EMULATOR OPTIONS\n\
   -V, --verbose            Enable all Chisel printfs (cycle-by-cycle info)\n\
        +verbose\n\
 ", stdout);
+#if VM_COVERAGE
+  fputs("  +covfile=PATH            Write Verilator coverage data to PATH (default: logs/coverage.dat)\n",
+        stdout);
+#endif
 #if VM_TRACE == 0
   fputs("\
 \n\
@@ -113,6 +121,9 @@ int main(int argc, char** argv)
   uint64_t max_cycles = -1;
   int ret = 0;
   bool print_cycles = false;
+#if VM_COVERAGE
+  std::string cov_path = "logs/coverage.dat";
+#endif
   // Port numbers are 16 bit unsigned integers. 
   uint16_t rbb_port = 0;
 #if VM_TRACE
@@ -186,6 +197,8 @@ int main(int argc, char** argv)
 #endif
         else if (arg.substr(0, 12) == "+cycle-count")
           c = 'c';
+        else if (arg.substr(0, 10) == "+covfile=")
+          c = 'P';
         // If we don't find a legacy '+' EMULATOR argument, it still could be
         // a VERILOG_PLUSARG and not an error.
         else if (verilog_plusargs_legal) {
@@ -254,6 +267,21 @@ done_processing:
 
   Verilated::randReset(2);
   Verilated::commandArgs(argc, argv);
+#if VM_COVERAGE
+  if (const char* cov_arg = Verilated::commandArgsPlusMatch("covfile=")) {
+    const char* val = cov_arg + std::strlen("+covfile=");
+    if (*val) {
+      cov_path = val;
+    }
+  }
+  const auto slash_pos = cov_path.find_last_of('/');
+  if (slash_pos != std::string::npos && slash_pos != 0) {
+    Verilated::mkdir(cov_path.substr(0, slash_pos).c_str());
+  } else {
+    Verilated::mkdir("logs");
+  }
+  Verilated::threadContextp()->coveragep()->zero();
+#endif
   TEST_HARNESS *tile = new TEST_HARNESS;
 
 #if VM_TRACE
@@ -330,6 +358,11 @@ done_processing:
   {
     fprintf(stderr, "*** PASSED *** Completed after %ld cycles\n", trace_count);
   }
+
+#if VM_COVERAGE
+  Verilated::threadContextp()->coveragep()->write(cov_path.c_str());
+  fprintf(stderr, "Coverage data: %s\n", cov_path.c_str());
+#endif
 
   if (dtm) delete dtm;
   if (jtag) delete jtag;

@@ -8,6 +8,7 @@ set -g SCRIPT_DIR (dirname (status -f))
 set -g PROJECT_ROOT $SCRIPT_DIR
 set -g BUILD_DIR $PROJECT_ROOT/out
 set -g RESULT_DIR $PROJECT_ROOT/build_result
+set -g COVERAGE 0
 
 # Color output
 set -g RED '\033[0;31m'
@@ -48,6 +49,8 @@ function show_usage
     echo "  --rv32          Build RV32 configuration"
     echo "  --rv32-no-d     Build RV32 configuration without the D extension"
     echo "  --all           Build all configurations"
+    echo "  --coverage      Build coverage-enabled emulators (Verilator --coverage, *_cov artifacts)"
+    echo "  --no-coverage   Disable coverage build (default)"
     echo "  --clean         Clean build directory first"
     echo "  --help, -h      Show this help message"
     echo ""
@@ -113,6 +116,10 @@ else
             case '--all'
                 set -g TARGETS rv64 rv32 rv32-no-d
                 set -g ALL_SELECTED 1
+            case '--coverage'
+                set COVERAGE 1
+            case '--no-coverage'
+                set COVERAGE 0
             case '--clean'
                 set CLEAN_FIRST 1
             case '*'
@@ -165,7 +172,7 @@ function build_config
         print_warning "This may take 10-30 minutes depending on your machine..."
         set start_time (date +%s)
         
-        if mill emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].verilator.elf
+        if env VERILATOR_COVERAGE=$COVERAGE mill emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].verilator.elf
             set end_time (date +%s)
             set duration (math $end_time - $start_time)
             set minutes (math $duration / 60)
@@ -185,7 +192,11 @@ function build_config
                     end
                     set dest_path "$RESULT_DIR/$artifact"
                     cp -f $emulator_path $dest_path
-                    print_success "Copied emulator to $dest_path"
+                    if test $COVERAGE -eq 1
+                        print_success "Copied coverage emulator to $dest_path"
+                    else
+                        print_success "Copied emulator to $dest_path"
+                    end
                 end
             end
         else
@@ -240,6 +251,10 @@ for target in $TARGETS
         case '*'
             print_warning "Unknown build target: $target (skipping)"
             continue
+    end
+
+    if test $COVERAGE -eq 1
+        set artifact "$artifact"_cov
     end
 
     if not build_config $config "$label" "$artifact"
