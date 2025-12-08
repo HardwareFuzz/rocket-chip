@@ -9,6 +9,7 @@ set -g PROJECT_ROOT $SCRIPT_DIR
 set -g BUILD_DIR $PROJECT_ROOT/out
 set -g RESULT_DIR $PROJECT_ROOT/build_result
 set -g COVERAGE 0
+set -g MILL_CMD mill
 
 # Color output
 set -g RED '\033[0;31m'
@@ -136,6 +137,11 @@ else
     end
 end
 
+# Coverage builds need a fresh mill process so VERILATOR_COVERAGE is visible to the build.
+if test $COVERAGE -eq 1
+    set -g MILL_CMD mill --no-server
+end
+
 function build_config
     set config $argv[1]
     set arch $argv[2]
@@ -148,7 +154,7 @@ function build_config
         print_info "Generating Verilog for $config..."
         set start_time (date +%s)
         
-        if mill emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].mfccompiler.compile
+        if $MILL_CMD emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].mfccompiler.compile
             set end_time (date +%s)
             set duration (math $end_time - $start_time)
             print_success "Verilog generation completed in $duration seconds"
@@ -172,7 +178,7 @@ function build_config
         print_warning "This may take 10-30 minutes depending on your machine..."
         set start_time (date +%s)
         
-        if env VERILATOR_COVERAGE=$COVERAGE mill emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].verilator.elf
+        if env VERILATOR_COVERAGE=$COVERAGE $MILL_CMD emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].verilator.elf
             set end_time (date +%s)
             set duration (math $end_time - $start_time)
             set minutes (math $duration / 60)
