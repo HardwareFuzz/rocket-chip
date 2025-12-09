@@ -8,7 +8,8 @@ set -g SCRIPT_DIR (dirname (status -f))
 set -g PROJECT_ROOT $SCRIPT_DIR
 set -g BUILD_DIR $PROJECT_ROOT/out
 set -g RESULT_DIR $PROJECT_ROOT/build_result
-set -g COVERAGE 0
+set -g RISCV_BIN_DIR /home/canxin/Git/riscv_fuzz_test/riscv_impls_bins
+set -g COVERAGE_MODE "none"   # none | full | light
 set -g MILL_CMD mill
 
 # Color output
@@ -50,7 +51,8 @@ function show_usage
     echo "  --rv32          Build RV32 configuration"
     echo "  --rv32-no-d     Build RV32 configuration without the D extension"
     echo "  --all           Build all configurations"
-    echo "  --coverage      Build coverage-enabled emulators (Verilator --coverage, *_cov artifacts)"
+    echo "  --coverage      Build 全覆盖版 (Verilator --coverage，输出 *_cov)"
+    echo "  --coverage-light  Build 轻覆盖版 (仅行/用户覆盖，无 toggle，输出 *_cov_light)"
     echo "  --no-coverage   Disable coverage build (default)"
     echo "  --clean         Clean build directory first"
     echo "  --help, -h      Show this help message"
@@ -118,9 +120,11 @@ else
                 set -g TARGETS rv64 rv32 rv32-no-d
                 set -g ALL_SELECTED 1
             case '--coverage'
-                set COVERAGE 1
+                set COVERAGE_MODE "full"
+            case '--coverage-light'
+                set COVERAGE_MODE "light"
             case '--no-coverage'
-                set COVERAGE 0
+                set COVERAGE_MODE "none"
             case '--clean'
                 set CLEAN_FIRST 1
             case '*'
@@ -138,7 +142,7 @@ else
 end
 
 # Coverage builds need a fresh mill process so VERILATOR_COVERAGE is visible to the build.
-if test $COVERAGE -eq 1
+if test "$COVERAGE_MODE" != "none"
     set -g MILL_CMD mill --no-server
 end
 
@@ -178,7 +182,17 @@ function build_config
         print_warning "This may take 10-30 minutes depending on your machine..."
         set start_time (date +%s)
         
-        if env VERILATOR_COVERAGE=$COVERAGE $MILL_CMD emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].verilator.elf
+        set extra_env
+        switch $COVERAGE_MODE
+            case "full"
+                set extra_env VERILATOR_COVERAGE=1
+            case "light"
+                set extra_env VERILATOR_COVERAGE=1 VERILATOR_EXTRA_ARGS="--coverage-line --coverage-user --coverage-max-width 0"
+            case "none"
+                set extra_env
+        end
+
+        if env $extra_env $MILL_CMD emulator[freechips.rocketchip.system.TestHarness,freechips.rocketchip.system.$config].verilator.elf
             set end_time (date +%s)
             set duration (math $end_time - $start_time)
             set minutes (math $duration / 60)
@@ -198,11 +212,14 @@ function build_config
                     end
                     set dest_path "$RESULT_DIR/$artifact"
                     cp -f $emulator_path $dest_path
-                    if test $COVERAGE -eq 1
-                        print_success "Copied coverage emulator to $dest_path"
-                    else
-                        print_success "Copied emulator to $dest_path"
+                    print_success "Copied emulator to $dest_path"
+
+                    if not test -d $RISCV_BIN_DIR
+                        mkdir -p $RISCV_BIN_DIR
                     end
+                    set fuzz_dest "$RISCV_BIN_DIR/$artifact"
+                    cp -f $emulator_path $fuzz_dest
+                    print_success "Copied emulator to $fuzz_dest"
                 end
             end
         else
@@ -249,18 +266,23 @@ for target in $TARGETS
         case 'rv32'
             set config "MaxExtensionRV32ConfigWithTrace"
             set label "RV32"
-            set artifact "rocket_rv32"
+            set artifact "rocket_rv32_fd"
         case 'rv32-no-d'
             set config "MaxExtensionRV32NoDConfigWithTrace"
             set label "RV32 (No D)"
-            set artifact "rocket_rv32_no_d"
+            set artifact "rocket_rv32_f"
         case '*'
             print_warning "Unknown build target: $target (skipping)"
             continue
     end
 
-    if test $COVERAGE -eq 1
-        set artifact "$artifact"_cov
+    switch $COVERAGE_MODE
+        case "full"
+            set artifact "$artifact"_cov
+        case "light"
+            set artifact "$artifact"_cov_light
+        case "none"
+            true # no suffix
     end
 
     if not build_config $config "$label" "$artifact"
