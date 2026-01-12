@@ -197,7 +197,7 @@ int main(int argc, char** argv)
 #endif
         else if (arg.substr(0, 12) == "+cycle-count")
           c = 'c';
-        else if (arg.substr(0, 10) == "+covfile=")
+        else if (arg.substr(0, 9) == "+covfile=")
           c = 'P';
         // If we don't find a legacy '+' EMULATOR argument, it still could be
         // a VERILOG_PLUSARG and not an error.
