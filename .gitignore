@@ -19,3 +19,5 @@ rocketchip.jar
 .vscode
 build_result
 logs/
+.sbtw
+.millw
