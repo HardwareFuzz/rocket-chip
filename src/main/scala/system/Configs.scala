@@ -41,6 +41,24 @@ class MemOrderIncoherentConfig extends Config(
   new BaseConfig
 )
 
+class MemOrderCoherent2CConfig extends Config(
+  new WithL1DCacheNonblocking(0) ++
+  new WithL1DCacheSDQEntries(8) ++
+  new WithL1DCacheAcquireBeforeRelease ++
+  new WithNBigCores(2) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class MemOrderIncoherent2CConfig extends Config(
+  new WithL1DCacheNonblocking(0) ++
+  new WithL1DCacheSDQEntries(8) ++
+  new WithL1DCacheAcquireBeforeRelease ++
+  new WithNBigCores(2) ++
+  new WithIncoherentBusTopology ++
+  new BaseConfig
+)
+
 // Config with Trace Core Ingress and FP logging enabled
 class DefaultConfigWithTrace extends Config(new freechips.rocketchip.rocket.WithTraceCoreIngress ++ new DefaultConfig)
 
