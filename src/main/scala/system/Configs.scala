@@ -5,7 +5,7 @@ package freechips.rocketchip.system
 
 import org.chipsalliance.cde.config.Config
 import freechips.rocketchip.subsystem._
-import freechips.rocketchip.rocket.{WithNBigCores, WithNMedCores, WithNSmallCores, WithRV32, WithRV32DoublePrecision, WithFP16, WithHypervisor, With1TinyCore, WithScratchpadsOnly, WithCloneRocketTiles, WithB}
+import freechips.rocketchip.rocket.{WithNBigCores, WithNMedCores, WithNSmallCores, WithRV32, WithRV32DoublePrecision, WithFP16, WithHypervisor, With1TinyCore, WithScratchpadsOnly, WithCloneRocketTiles, WithB, WithL1DCacheAcquireBeforeRelease, WithL1DCacheNonblocking, WithL1DCacheSDQEntries}
 
 class WithJtagDTMSystem extends freechips.rocketchip.subsystem.WithJtagDTM
 class WithDebugSBASystem extends freechips.rocketchip.subsystem.WithDebugSBA
@@ -22,6 +22,24 @@ class BaseConfig extends Config(
 )
 
 class DefaultConfig extends Config(new WithNBigCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
+
+class MemOrderCoherentConfig extends Config(
+  new WithL1DCacheNonblocking(0) ++
+  new WithL1DCacheSDQEntries(8) ++
+  new WithL1DCacheAcquireBeforeRelease ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class MemOrderIncoherentConfig extends Config(
+  new WithL1DCacheNonblocking(0) ++
+  new WithL1DCacheSDQEntries(8) ++
+  new WithL1DCacheAcquireBeforeRelease ++
+  new WithNBigCores(1) ++
+  new WithIncoherentBusTopology ++
+  new BaseConfig
+)
 
 // Config with Trace Core Ingress and FP logging enabled
 class DefaultConfigWithTrace extends Config(new freechips.rocketchip.rocket.WithTraceCoreIngress ++ new DefaultConfig)

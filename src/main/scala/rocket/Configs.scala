@@ -242,6 +242,8 @@ class WithL1DCacheTLBBasePageSectors(sectors: Int)     extends RocketDCacheConfi
 class WithL1DCacheTLBSuperpages(superpages: Int)       extends RocketDCacheConfig(_.copy(nTLBSuperpages = superpages))
 class WithL1DCacheBlockBytes(bytes: Int = 64)          extends RocketDCacheConfig(_.copy(blockBytes = bytes))
 class WithL1DCacheNonblocking(nMSHRs: Int)             extends RocketDCacheConfig(_.copy(nMSHRs = nMSHRs))
+class WithL1DCacheSDQEntries(entries: Int)             extends RocketDCacheConfig(_.copy(nSDQ = entries))
+class WithL1DCacheAcquireBeforeRelease(enable: Boolean = true) extends RocketDCacheConfig(_.copy(acquireBeforeRelease = enable))
 class WithL1DCacheClockGating                          extends RocketDCacheConfig(_.copy(clockGate = true))
 class WithL1DCacheDTIMAddress(address: BigInt)         extends RocketDCacheConfig(_.copy(scratch = Some(address)))
 
