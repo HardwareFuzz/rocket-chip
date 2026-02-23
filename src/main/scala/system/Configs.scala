@@ -4,6 +4,7 @@
 package freechips.rocketchip.system
 
 import org.chipsalliance.cde.config.Config
+import freechips.rocketchip.devices.tilelink.BootROMLocated
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.rocket.{WithNBigCores, WithNMedCores, WithNSmallCores, WithRV32, WithRV32DoublePrecision, WithFP16, WithHypervisor, With1TinyCore, WithScratchpadsOnly, WithCloneRocketTiles, WithB, WithL1DCacheAcquireBeforeRelease, WithL1DCacheNonblocking, WithL1DCacheSDQEntries}
 
@@ -20,6 +21,11 @@ class BaseConfig extends Config(
   new WithNExtTopInterrupts(2) ++
   new BaseSubsystemConfig
 )
+
+class WithBootROMResetVectorToDram extends Config((site, here, up) => {
+  case BootROMLocated(InSubsystem) =>
+    up(BootROMLocated(InSubsystem), site).map(_.copy(hang = BigInt("80000000", 16)))
+})
 
 class DefaultConfig extends Config(new WithNBigCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
 
@@ -42,6 +48,7 @@ class MemOrderIncoherentConfig extends Config(
 )
 
 class MemOrderCoherent2CConfig extends Config(
+  new WithBootROMResetVectorToDram ++
   new WithL1DCacheNonblocking(0) ++
   new WithL1DCacheSDQEntries(8) ++
   new WithL1DCacheAcquireBeforeRelease ++
@@ -51,6 +58,7 @@ class MemOrderCoherent2CConfig extends Config(
 )
 
 class MemOrderIncoherent2CConfig extends Config(
+  new WithBootROMResetVectorToDram ++
   new WithL1DCacheNonblocking(0) ++
   new WithL1DCacheSDQEntries(8) ++
   new WithL1DCacheAcquireBeforeRelease ++
@@ -60,6 +68,7 @@ class MemOrderIncoherent2CConfig extends Config(
 )
 
 class MemOrderCoherent2CBlockingSDQ4Config extends Config(
+  new WithBootROMResetVectorToDram ++
   new WithL1DCacheNonblocking(0) ++
   new WithL1DCacheSDQEntries(4) ++
   new WithL1DCacheAcquireBeforeRelease ++
@@ -69,6 +78,7 @@ class MemOrderCoherent2CBlockingSDQ4Config extends Config(
 )
 
 class MemOrderCoherent2CNonblockingSDQ8Config extends Config(
+  new WithBootROMResetVectorToDram ++
   new WithL1DCacheNonblocking(2) ++
   new WithL1DCacheSDQEntries(8) ++
   new WithL1DCacheAcquireBeforeRelease ++
@@ -78,6 +88,7 @@ class MemOrderCoherent2CNonblockingSDQ8Config extends Config(
 )
 
 class MemOrderCoherent2CNonblockingSDQ16Config extends Config(
+  new WithBootROMResetVectorToDram ++
   new WithL1DCacheNonblocking(2) ++
   new WithL1DCacheSDQEntries(16) ++
   new WithL1DCacheAcquireBeforeRelease ++
