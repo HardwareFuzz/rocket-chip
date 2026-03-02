@@ -97,6 +97,31 @@ class MemOrderCoherent2CNonblockingSDQ16Config extends Config(
   new BaseConfig
 )
 
+// ------------------------------------------------------------
+// Variants for fuzzing/sweeps: disable TileLink monitors so the emulator does not
+// abort on internal monitor assertions (we still rely on architectural traces
+// for differential testing).
+
+class MemOrderCoherent2CNoTLMonitorsConfig extends Config(
+  new WithoutTLMonitors ++
+  new MemOrderCoherent2CConfig
+)
+
+class MemOrderCoherent2CBlockingSDQ4NoTLMonitorsConfig extends Config(
+  new WithoutTLMonitors ++
+  new MemOrderCoherent2CBlockingSDQ4Config
+)
+
+class MemOrderCoherent2CNonblockingSDQ8NoTLMonitorsConfig extends Config(
+  new WithoutTLMonitors ++
+  new MemOrderCoherent2CNonblockingSDQ8Config
+)
+
+class MemOrderCoherent2CNonblockingSDQ16NoTLMonitorsConfig extends Config(
+  new WithoutTLMonitors ++
+  new MemOrderCoherent2CNonblockingSDQ16Config
+)
+
 // Config with Trace Core Ingress and FP logging enabled
 class DefaultConfigWithTrace extends Config(new freechips.rocketchip.rocket.WithTraceCoreIngress ++ new DefaultConfig)
 

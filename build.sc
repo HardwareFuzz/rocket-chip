@@ -383,10 +383,10 @@ object emulator extends Cross[Emulator](
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.DualCoreConfig"),
 
   // MemOrder metamorphic variants (2-core)
-  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CConfig"),
-  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CBlockingSDQ4Config"),
-  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ8Config"),
-  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ16Config"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CNoTLMonitorsConfig"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CBlockingSDQ4NoTLMonitorsConfig"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ8NoTLMonitorsConfig"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ16NoTLMonitorsConfig"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MemPortOnlyConfig"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MMIOPortOnlyConfig"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.CloneTileConfig"),

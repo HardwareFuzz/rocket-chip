@@ -65,10 +65,10 @@ if [[ -n "${CONFIG}" ]]; then
 fi
 
 if [[ ${BUILD_MEMORDER_2C} -eq 1 ]]; then
-  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CConfig" "rocket_2c_memorder_coherent_emu"
-  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CBlockingSDQ4Config" "rocket_2c_memorder_blocking_sdq4_emu"
-  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ8Config" "rocket_2c_memorder_nonblocking_sdq8_emu"
-  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ16Config" "rocket_2c_memorder_nonblocking_sdq16_emu"
+  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CNoTLMonitorsConfig" "rocket_2c_memorder_coherent_emu"
+  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CBlockingSDQ4NoTLMonitorsConfig" "rocket_2c_memorder_blocking_sdq4_emu"
+  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ8NoTLMonitorsConfig" "rocket_2c_memorder_nonblocking_sdq8_emu"
+  add_cfg "freechips.rocketchip.system.MemOrderCoherent2CNonblockingSDQ16NoTLMonitorsConfig" "rocket_2c_memorder_nonblocking_sdq16_emu"
 fi
 
 mkdir -p "${OUT_DIR}"

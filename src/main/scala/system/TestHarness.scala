@@ -14,6 +14,7 @@ class TestHarness()(implicit p: Parameters) extends Module {
   val io = IO(new Bundle {
     val success = Output(Bool())
   })
+  io.success := false.B
 
   val ldut = LazyModule(new ExampleRocketSystem)
   val dut = Module(ldut.module)
