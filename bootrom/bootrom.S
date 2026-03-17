@@ -4,7 +4,8 @@
 .globl _start
 _start:
   csrwi 0x7c1, 0 // disable chicken bits
-  li s0, DRAM_BASE
+  li s0, 1
+  slli s0, s0, 31
   csrr a0, mhartid
   la a1, _dtb
   jr s0
@@ -13,12 +14,11 @@ _start:
 .globl _hang
 _hang:
   csrwi 0x7c1, 0 // disable chicken bits
+  li s0, 1
+  slli s0, s0, 31
   csrr a0, mhartid
   la a1, _dtb
-  csrwi mie, 0
-1:
-  wfi
-  j 1b
+  jr s0
 
 .section .rodata.dtb, "a", @progbits
 .globl _dtb

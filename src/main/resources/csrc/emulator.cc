@@ -6,6 +6,9 @@
 #include <memory>
 #include "verilated_vcd_c.h"
 #endif
+#if VM_COVERAGE
+#include "verilated_cov.h"
+#endif
 #include <fesvr/dtm.h>
 #include "remote_bitbang.h"
 #include <iostream>
@@ -15,6 +18,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <cstring>
 
 // For option parsing, which is split across this file, Verilog, and
 // FESVR's HTIF, a few external files must be pulled in. The list of
@@ -75,6 +79,10 @@ EMULATOR OPTIONS\n\
   -V, --verbose            Enable all Chisel printfs (cycle-by-cycle info)\n\
        +verbose\n\
 ", stdout);
+#if VM_COVERAGE
+  fputs("  +covfile=PATH            Write Verilator coverage data to PATH (default: logs/coverage.dat)\n",
+        stdout);
+#endif
 #if VM_TRACE == 0
   fputs("\
 \n\
@@ -113,8 +121,12 @@ int main(int argc, char** argv)
   uint64_t max_cycles = -1;
   int ret = 0;
   bool print_cycles = false;
+#if VM_COVERAGE
+  std::string cov_path = "logs/coverage.dat";
+#endif
   // Port numbers are 16 bit unsigned integers. 
   uint16_t rbb_port = 0;
+  bool rbb_port_set = false;
 #if VM_TRACE
   FILE * vcdfile = NULL;
   uint64_t start = 0;
@@ -151,7 +163,7 @@ int main(int argc, char** argv)
       case 'h': usage(argv[0]);             return 0;
       case 'm': max_cycles = atoll(optarg); break;
       case 's': random_seed = atoi(optarg); break;
-      case 'r': rbb_port = atoi(optarg);    break;
+      case 'r': rbb_port = atoi(optarg); rbb_port_set = true; break;
       case 'V': verbose = true;             break;
 #if VM_TRACE
       case 'v': {
@@ -186,6 +198,8 @@ int main(int argc, char** argv)
 #endif
         else if (arg.substr(0, 12) == "+cycle-count")
           c = 'c';
+        else if (arg.substr(0, 9) == "+covfile=")
+          c = 'P';
         // If we don't find a legacy '+' EMULATOR argument, it still could be
         // a VERILOG_PLUSARG and not an error.
         else if (verilog_plusargs_legal) {
@@ -254,6 +268,30 @@ done_processing:
 
   Verilated::randReset(2);
   Verilated::commandArgs(argc, argv);
+
+  // The C++ remote-bitbang implementation can add significant per-cycle overhead
+  // (socket accept polling). Only enable it when explicitly requested.
+  bool enable_rbb = rbb_port_set;
+  if (const char* en_arg = Verilated::commandArgsPlusMatch("jtag_rbb_enable=")) {
+    const char* val = en_arg + std::strlen("+jtag_rbb_enable=");
+    if (*val)
+      enable_rbb = enable_rbb || (atoi(val) != 0);
+  }
+#if VM_COVERAGE
+  if (const char* cov_arg = Verilated::commandArgsPlusMatch("covfile=")) {
+    const char* val = cov_arg + std::strlen("+covfile=");
+    if (*val) {
+      cov_path = val;
+    }
+  }
+  const auto slash_pos = cov_path.find_last_of('/');
+  if (slash_pos != std::string::npos && slash_pos != 0) {
+    Verilated::mkdir(cov_path.substr(0, slash_pos).c_str());
+  } else {
+    Verilated::mkdir("logs");
+  }
+  Verilated::threadContextp()->coveragep()->zero();
+#endif
   TEST_HARNESS *tile = new TEST_HARNESS;
 
 #if VM_TRACE
@@ -266,7 +304,7 @@ done_processing:
   }
 #endif
 
-  jtag = new remote_bitbang_t(rbb_port);
+  jtag = enable_rbb ? new remote_bitbang_t(rbb_port) : nullptr;
   dtm = new dtm_t(htif_argc, htif_argv);
 
   signal(SIGTERM, handle_sigterm);
@@ -281,7 +319,7 @@ done_processing:
   int sync_reset_cycles = 10;
 
   while (trace_count < max_cycles) {
-    if (done_reset && (dtm->done() || jtag->done() || tile->io_success))
+    if (done_reset && (dtm->done() || (jtag && jtag->done()) || tile->io_success))
       break;
 
     tile->clock = 0;
@@ -304,6 +342,10 @@ done_processing:
     trace_count++;
   }
 
+  // NOTE: We intentionally avoid "graceful" teardown here.
+  // fesvr (dtm/htif) uses internal threads and synchronization primitives;
+  // attempting to stop/join/flush at process exit can occasionally hang.
+
 #if VM_TRACE
   if (tfp)
     tfp->close();
@@ -316,7 +358,7 @@ done_processing:
     fprintf(stderr, "*** FAILED *** via dtm (code = %d, seed %d) after %ld cycles\n", dtm->exit_code(), random_seed, trace_count);
     ret = dtm->exit_code();
   }
-  else if (jtag->exit_code())
+  else if (jtag && jtag->exit_code())
   {
     fprintf(stderr, "*** FAILED *** via jtag (code = %d, seed %d) after %ld cycles\n", jtag->exit_code(), random_seed, trace_count);
     ret = jtag->exit_code();
@@ -331,9 +373,13 @@ done_processing:
     fprintf(stderr, "*** PASSED *** Completed after %ld cycles\n", trace_count);
   }
 
-  if (dtm) delete dtm;
-  if (jtag) delete jtag;
-  if (tile) delete tile;
-  if (htif_argv) free(htif_argv);
-  return ret;
+#if VM_COVERAGE
+  Verilated::threadContextp()->coveragep()->write(cov_path.c_str());
+  fprintf(stderr, "Coverage data: %s\n", cov_path.c_str());
+#endif
+
+  // Ensure the emulator always exits promptly after printing PASS/FAIL.
+  // Use _exit() to skip atexit handlers and stdio flushing (which may deadlock
+  // in the presence of other threads).
+  _exit(ret);
 }
