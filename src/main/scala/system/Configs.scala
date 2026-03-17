@@ -4,8 +4,9 @@
 package freechips.rocketchip.system
 
 import org.chipsalliance.cde.config.Config
+import freechips.rocketchip.devices.tilelink.BootROMLocated
 import freechips.rocketchip.subsystem._
-import freechips.rocketchip.rocket.{WithNBigCores, WithNMedCores, WithNSmallCores, WithRV32, WithFP16, WithHypervisor, With1TinyCore, WithScratchpadsOnly, WithCloneRocketTiles, WithB}
+import freechips.rocketchip.rocket.{WithNBigCores, WithNMedCores, WithNSmallCores, WithRV32, WithRV32DoublePrecision, WithRV64SinglePrecision, WithFP16, WithHypervisor, With1TinyCore, WithScratchpadsOnly, WithCloneRocketTiles, WithB, WithoutFPU}
 
 class WithJtagDTMSystem extends freechips.rocketchip.subsystem.WithJtagDTM
 class WithDebugSBASystem extends freechips.rocketchip.subsystem.WithDebugSBA
@@ -21,9 +22,52 @@ class BaseConfig extends Config(
   new BaseSubsystemConfig
 )
 
+class WithBootROMResetVectorToDram extends Config((site, here, up) => {
+  case BootROMLocated(InSubsystem) =>
+    up(BootROMLocated(InSubsystem), site).map(_.copy(hang = BigInt("80000000", 16)))
+})
+
 class DefaultConfig extends Config(new WithNBigCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
 // Config with Trace Core Ingress and FP logging enabled
 class DefaultConfigWithTrace extends Config(new freechips.rocketchip.rocket.WithTraceCoreIngress ++ new DefaultConfig)
+
+class TraceRV64Config extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithoutFPU ++
+  new DefaultConfig
+)
+
+class TraceRV64FConfig extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithRV64SinglePrecision ++
+  new DefaultConfig
+)
+
+class TraceRV32Config extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithoutFPU ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class TraceRV32FConfig extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class TraceRV32FDConfig extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithRV32DoublePrecision ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
 
 class DefaultBufferlessConfig extends Config(new WithBufferlessBroadcastHub ++ new DefaultConfig)
 class DefaultSmallConfig extends Config(new WithNSmallCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
@@ -107,3 +151,63 @@ class BaseFPGAConfig extends Config(new BaseConfig ++ new WithCoherentBusTopolog
 class DefaultFPGAConfig extends Config(new WithNSmallCores(1) ++ new BaseFPGAConfig)
 
 class CloneTileConfig extends Config(new WithCloneRocketTiles(7) ++ new WithNBigCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
+
+// Maximum extension configurations
+class MaxExtensionRV64Config extends Config(
+  new WithB ++
+  new WithFP16 ++
+  new WithHypervisor ++
+  new DefaultConfig
+)
+
+class MaxExtensionRV32Config extends Config(
+  new WithB ++
+  new WithFP16 ++
+  new WithRV32DoublePrecision ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class MaxExtensionRV32NoDConfig extends Config(
+  new WithB ++
+  new WithFP16 ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+// Maximum extension configurations with commit log
+class MaxExtensionRV64ConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithHypervisor ++
+  new DefaultConfig
+)
+
+class MaxExtensionRV32ConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithRV32DoublePrecision ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class MaxExtensionRV32NoDConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithRV32 ++
+  new WithNBigCores(1) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)

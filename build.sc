@@ -352,6 +352,12 @@ object emulator extends Cross[Emulator](
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.DefaultConfig"),
   // DefaultConfigWithTrace - for complete logging
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.DefaultConfigWithTrace"),
+  // Trace ISA variants (1-core) - used by build.sh --isa
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV64Config"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV64FConfig"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32Config"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32FConfig"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32FDConfig"),
   // Maximum extension configurations with commit log
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV64ConfigWithTrace"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV32ConfigWithTrace"),

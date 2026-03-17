@@ -4,14 +4,25 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  ./build.sh [--isa rv64fd] [--cores 1] [--coverage|--coverage-light|--no-coverage] [--clean]
+  ./build.sh [--isa <isa>] [--config <ConfigClass>] [--cores 1] [--out-dir DIR] [--coverage|--coverage-light|--no-coverage] [--clean]
   ./build.sh --help
 
 Build a runnable Verilator-based Rocket Chip emulator (out-of-tree mill build).
 
 Options:
-  --isa rv64fd          ISA tag used for output naming (default: rv64fd)
+  --isa <isa>           ISA/build variant (default: rv64fd). May be specified multiple times.
+                        Supported:
+                          rv64fd (DefaultConfigWithTrace)
+                          rv64f  (TraceRV64FConfig)
+                          rv64   (TraceRV64Config)
+                          rv32fd (TraceRV32FDConfig)
+                          rv32f  (TraceRV32FConfig)
+                          rv32   (TraceRV32Config)
+  --config <ConfigClass> Override the config class (applies to all --isa values).
+                         Examples: DefaultConfigWithTrace, TraceRV64Config, TraceRV32Config, DefaultSmallConfig
   --cores 1             Core count tag used for output naming (default: 1)
+  --out-dir DIR         Output directory for the final binary (default: ./build_result)
+                        You can also set CX_OUT_DIR (shared across repos) or OUT_DIR.
   --coverage            Verilator full coverage (output suffix: _cov)
   --coverage-light      Line/user coverage only (output suffix: _cov_light)
   --no-coverage         Disable coverage (default)
@@ -19,7 +30,7 @@ Options:
   --help, -h            Show this help
 
 Output artifact:
-  build_result/rocket-chip_<isa>_<N>c[_cov|_cov_light]
+  <out-dir>/rocket-chip_<isa>_<N>c[_cov|_cov_light]
 
 Dependencies:
   - mill (or ./.millw), firtool, verilator, cmake, ninja, clang/clang++
@@ -28,13 +39,14 @@ EOF
 }
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT_DIR="${OUT_DIR:-${ROOT_DIR}/build_result}"
 MILL_CMD="${MILL_CMD:-mill}"
 
-ISA="rv64fd"
+ISAS=()
 CORES="1"
 CLEAN=0
 COV_MODE="none" # none|full|light
+CONFIG_CLASS=""
+OUT_DIR_OPT=""
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -53,8 +65,13 @@ ensure_mill() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --isa) ISA="$2"; shift 2 ;;
+    --isa) ISAS+=("$2"); shift 2 ;;
+    --config) CONFIG_CLASS="$2"; shift 2 ;;
     --cores) CORES="$2"; shift 2 ;;
+    --out-dir)
+      [[ $# -ge 2 ]] || die "--out-dir requires a value"
+      OUT_DIR_OPT="$2"; shift 2 ;;
+    --out-dir=*) OUT_DIR_OPT="${1#*=}"; shift ;;
     --coverage) COV_MODE="full"; shift ;;
     --coverage-light) COV_MODE="light"; shift ;;
     --no-coverage) COV_MODE="none"; shift ;;
@@ -64,19 +81,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ${#ISAS[@]} -eq 0 ]]; then
+  ISAS=("rv64fd")
+fi
+
 [[ "${CORES}" =~ ^[0-9]+$ ]] || die "--cores must be an integer"
 
 if [[ "${CORES}" != "1" ]]; then
-  die "--cores ${CORES} is not supported on this branch (use branch '2hart')"
+  die "--cores ${CORES} is not supported on this branch (use cx-2hart-build for multi-hart)"
 fi
-
-case "${ISA}" in
-  rv64fd) ;;
-  rv64) ISA="rv64fd" ;; # alias
-  *) die "unsupported --isa on this branch: ${ISA} (use rv64fd)" ;;
-esac
-
-config_class="DefaultConfigWithTrace"
 
 suffix=""
 extra_env=()
@@ -96,11 +109,11 @@ case "${COV_MODE}" in
   *) die "internal: unknown coverage mode: ${COV_MODE}" ;;
 esac
 
-artifact_name="rocket-chip_${ISA}_${CORES}c${suffix}"
-artifact_path="${OUT_DIR}/${artifact_name}"
-
 top="freechips.rocketchip.system.TestHarness"
-cfg="freechips.rocketchip.system.${config_class}"
+config_pkg="freechips.rocketchip.system"
+
+OUT_DIR_DEFAULT="${ROOT_DIR}/build_result"
+OUT_DIR="${OUT_DIR_OPT:-${CX_OUT_DIR:-${OUT_DIR:-${OUT_DIR_DEFAULT}}}}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -112,20 +125,45 @@ if [[ "${COV_MODE}" != "none" ]]; then
   mill_args+=("--no-server")
 fi
 
-if (( CLEAN )); then
-  rm -rf "${ROOT_DIR}/out/emulator/${top}/${cfg}/verilator" || true
-  rm -f "${artifact_path}" || true
-fi
+build_one() {
+  local isa_in="$1"
+  local isa_tag="$1"
+  local default_cfg_class=""
 
-echo "[build] ${artifact_name} (config=${cfg})"
-(
-  cd "${ROOT_DIR}"
-  env "${extra_env[@]}" "${MILL_CMD}" "${mill_args[@]}" -i "emulator[${top},${cfg}].verilator.elf"
-)
+  case "${isa_in}" in
+    rv64fd) default_cfg_class="DefaultConfigWithTrace" ;;
+    rv64f) default_cfg_class="TraceRV64FConfig" ;;
+    rv64) default_cfg_class="TraceRV64Config" ;;
+    rv32fd) default_cfg_class="TraceRV32FDConfig" ;;
+    rv32f) default_cfg_class="TraceRV32FConfig" ;;
+    rv32) default_cfg_class="TraceRV32Config" ;;
+    *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
+  esac
 
-emu_bin="${ROOT_DIR}/out/emulator/${top}/${cfg}/verilator/elf.dest/emulator"
-[[ -x "${emu_bin}" ]] || die "emulator binary not found at ${emu_bin}"
+  local cfg_class="${CONFIG_CLASS:-${default_cfg_class}}"
+  local cfg="${config_pkg}.${cfg_class}"
+  artifact_name="rocket-chip_${isa_tag}_${CORES}c${suffix}"
+  artifact_path="${OUT_DIR}/${artifact_name}"
 
-cp -f "${emu_bin}" "${artifact_path}"
-chmod +x "${artifact_path}"
-echo "  -> ${artifact_path}"
+  if (( CLEAN )); then
+    rm -rf "${ROOT_DIR}/out/emulator/${top}/${cfg}/verilator" || true
+    rm -f "${artifact_path}" || true
+  fi
+
+  echo "[build] ${artifact_name} (config=${cfg})"
+  (
+    cd "${ROOT_DIR}"
+    env "${extra_env[@]}" "${MILL_CMD}" "${mill_args[@]}" -i "emulator[${top},${cfg}].verilator.elf"
+  )
+
+  emu_bin="${ROOT_DIR}/out/emulator/${top}/${cfg}/verilator/elf.dest/emulator"
+  [[ -x "${emu_bin}" ]] || die "emulator binary not found at ${emu_bin}"
+
+  cp -f "${emu_bin}" "${artifact_path}"
+  chmod +x "${artifact_path}"
+  echo "  -> ${artifact_path}"
+}
+
+for isa in "${ISAS[@]}"; do
+  build_one "${isa}"
+done
