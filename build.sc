@@ -358,6 +358,13 @@ object emulator extends Cross[Emulator](
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32Config"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32FConfig"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32FDConfig"),
+  // Trace ISA variants (2-core) - used by cx-2hart-build build.sh --cores 2
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV64FDConfig2C"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV64Config2C"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV64FConfig2C"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32Config2C"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32FConfig2C"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.TraceRV32FDConfig2C"),
   // Maximum extension configurations with commit log
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV64ConfigWithTrace"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV32ConfigWithTrace"),

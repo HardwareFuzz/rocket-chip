@@ -69,6 +69,55 @@ class TraceRV32FDConfig extends Config(
   new BaseConfig
 )
 
+class TraceRV64FDConfig2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithBootROMResetVectorToDram ++
+  new DualCoreConfig
+)
+
+class TraceRV64Config2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithoutFPU ++
+  new WithBootROMResetVectorToDram ++
+  new DualCoreConfig
+)
+
+class TraceRV64FConfig2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithRV64SinglePrecision ++
+  new WithBootROMResetVectorToDram ++
+  new DualCoreConfig
+)
+
+class TraceRV32Config2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithoutFPU ++
+  new WithBootROMResetVectorToDram ++
+  new WithRV32 ++
+  new WithNBigCores(2) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class TraceRV32FConfig2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithBootROMResetVectorToDram ++
+  new WithRV32 ++
+  new WithNBigCores(2) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class TraceRV32FDConfig2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithBootROMResetVectorToDram ++
+  new WithRV32DoublePrecision ++
+  new WithRV32 ++
+  new WithNBigCores(2) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
 class DefaultBufferlessConfig extends Config(new WithBufferlessBroadcastHub ++ new DefaultConfig)
 class DefaultSmallConfig extends Config(new WithNSmallCores(1) ++ new WithCoherentBusTopology ++ new BaseConfig)
 class DefaultRV32Config extends Config(new WithRV32 ++ new DefaultConfig)

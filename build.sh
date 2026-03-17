@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  ./build.sh [--isa <isa>] [--config <ConfigClass>] [--cores 1] [--out-dir DIR] [--coverage|--coverage-light|--no-coverage] [--clean]
+  ./build.sh [--isa <isa>] [--config <ConfigClass>] [--cores <1|2>] [--out-dir DIR] [--coverage|--coverage-light|--no-coverage] [--clean]
   ./build.sh --help
 
 Build a runnable Verilator-based Rocket Chip emulator (out-of-tree mill build).
@@ -20,7 +20,7 @@ Options:
                           rv32   (TraceRV32Config)
   --config <ConfigClass> Override the config class (applies to all --isa values).
                          Examples: DefaultConfigWithTrace, TraceRV64Config, TraceRV32Config, DefaultSmallConfig
-  --cores 1             Core count tag used for output naming (default: 1)
+  --cores <1|2>         Core count tag used for output naming (default: 1)
   --out-dir DIR         Output directory for the final binary (default: ./build_result)
                         You can also set CX_OUT_DIR (shared across repos) or OUT_DIR.
   --coverage            Verilator full coverage (output suffix: _cov)
@@ -87,8 +87,8 @@ fi
 
 [[ "${CORES}" =~ ^[0-9]+$ ]] || die "--cores must be an integer"
 
-if [[ "${CORES}" != "1" ]]; then
-  die "--cores ${CORES} is not supported on this branch (use cx-2hart-build for multi-hart)"
+if [[ "${CORES}" != "1" && "${CORES}" != "2" ]]; then
+  die "--cores ${CORES} is unsupported (supported: 1 or 2)"
 fi
 
 suffix=""
@@ -130,15 +130,27 @@ build_one() {
   local isa_tag="$1"
   local default_cfg_class=""
 
-  case "${isa_in}" in
-    rv64fd) default_cfg_class="DefaultConfigWithTrace" ;;
-    rv64f) default_cfg_class="TraceRV64FConfig" ;;
-    rv64) default_cfg_class="TraceRV64Config" ;;
-    rv32fd) default_cfg_class="TraceRV32FDConfig" ;;
-    rv32f) default_cfg_class="TraceRV32FConfig" ;;
-    rv32) default_cfg_class="TraceRV32Config" ;;
-    *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
-  esac
+  if [[ "${CORES}" == "1" ]]; then
+    case "${isa_in}" in
+      rv64fd) default_cfg_class="DefaultConfigWithTrace" ;;
+      rv64f) default_cfg_class="TraceRV64FConfig" ;;
+      rv64) default_cfg_class="TraceRV64Config" ;;
+      rv32fd) default_cfg_class="TraceRV32FDConfig" ;;
+      rv32f) default_cfg_class="TraceRV32FConfig" ;;
+      rv32) default_cfg_class="TraceRV32Config" ;;
+      *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
+    esac
+  else
+    case "${isa_in}" in
+      rv64fd) default_cfg_class="TraceRV64FDConfig2C" ;;
+      rv64f) default_cfg_class="TraceRV64FConfig2C" ;;
+      rv64) default_cfg_class="TraceRV64Config2C" ;;
+      rv32fd) default_cfg_class="TraceRV32FDConfig2C" ;;
+      rv32f) default_cfg_class="TraceRV32FConfig2C" ;;
+      rv32) default_cfg_class="TraceRV32Config2C" ;;
+      *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
+    esac
+  fi
 
   local cfg_class="${CONFIG_CLASS:-${default_cfg_class}}"
   local cfg="${config_pkg}.${cfg_class}"
