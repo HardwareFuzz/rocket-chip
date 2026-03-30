@@ -169,6 +169,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val gated_clock =
     if (!rocketParams.clockGate) clock
     else ClockGate(clock, clock_en, "rocket_clock_gate")
+  val sim_cycle = RegInit(0.U(64.W))
+  sim_cycle := sim_cycle + 1.U
 
   class RocketImpl { // entering gated-clock domain
 
@@ -259,6 +261,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val ex_reg_cause           = Reg(UInt())
   val ex_reg_replay = Reg(Bool())
   val ex_reg_pc = Reg(UInt())
+  val ex_reg_start_cycle = Reg(UInt(64.W))
   val ex_reg_mem_size = Reg(UInt())
   val ex_reg_hls = Reg(Bool())
   val ex_reg_inst = Reg(Bits())
@@ -280,6 +283,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val mem_reg_set_vconfig     = Reg(Bool())
   val mem_reg_sfence = Reg(Bool())
   val mem_reg_pc = Reg(UInt())
+  val mem_reg_start_cycle = Reg(UInt(64.W))
   val mem_reg_inst = Reg(Bits())
   val mem_reg_mem_size = Reg(UInt())
   val mem_reg_hls_or_dv = Reg(Bool())
@@ -298,6 +302,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val wb_reg_set_vconfig     = Reg(Bool())
   val wb_reg_sfence = Reg(Bool())
   val wb_reg_pc = Reg(UInt())
+  val wb_reg_start_cycle = Reg(UInt(64.W))
   val wb_reg_mem_size = Reg(UInt())
   val wb_reg_hls_or_dv = Reg(Bool())
   val wb_reg_hfence_v = Reg(Bool())
@@ -594,6 +599,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ex_reg_inst := id_inst(0)
     ex_reg_raw_inst := id_raw_inst(0)
     ex_reg_pc := ibuf.io.pc
+    ex_reg_start_cycle := sim_cycle
     ex_reg_btb_resp := ibuf.io.btb_resp
     ex_reg_wphit := bpu.io.bpwatch.map { bpw => bpw.ivalid(0) }
     ex_reg_set_vconfig := id_set_vconfig && !id_xcpt
@@ -663,6 +669,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     mem_reg_mem_size := ex_reg_mem_size
     mem_reg_hls_or_dv := io.dmem.req.bits.dv
     mem_reg_pc := ex_reg_pc
+    mem_reg_start_cycle := ex_reg_start_cycle
     // IDecode ensured they are 1H
     mem_reg_wdata := Mux(ex_reg_set_vconfig, ex_new_vl.getOrElse(alu.io.out), alu.io.out)
     mem_br_taken := alu.io.cmp_out
@@ -738,6 +745,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     wb_reg_hfence_v := mem_ctrl.mem_cmd === M_HFENCEV
     wb_reg_hfence_g := mem_ctrl.mem_cmd === M_HFENCEG
     wb_reg_pc := mem_reg_pc
+    wb_reg_start_cycle := mem_reg_start_cycle
     wb_reg_br_taken := mem_br_taken
     wb_reg_wphit := mem_reg_wphit | bpu.io.bpwatch.map { bpw => (bpw.rvalid(0) && mem_reg_load) || (bpw.wvalid(0) && mem_reg_store) }
     wb_reg_set_vconfig := mem_reg_set_vconfig
@@ -794,6 +802,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   // Track PC and instruction for outstanding long-latency operations
   val ll_pc_tracker = Reg(Vec(32, UInt(vaddrBitsExtended.W)))
   val ll_inst_tracker = Reg(Vec(32, UInt(32.W)))
+  val ll_start_cycle_tracker = Reg(Vec(32, UInt(64.W)))
 
   class LLWB extends Bundle {
     val data = UInt(xLen.W)
@@ -1152,6 +1161,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.fpu.ll_resp_tag := dmem_resp_waddr
   io.fpu.ll_resp_pc := ll_pc_tracker(dmem_resp_waddr)  // Tracked PC of the FP load
   io.fpu.ll_resp_inst := ll_inst_tracker(dmem_resp_waddr)  // Tracked instruction of the FP load
+  io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(dmem_resp_waddr)
+  io.fpu.sim_cycle := sim_cycle
   io.fpu.keep_clock_enabled := io.ptw.customCSRs.disableCoreClockGate
 
   io.fpu.v_sew := csr.io.vector.map(_.vconfig.vtype.vsew).getOrElse(0.U)
@@ -1162,6 +1173,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       io.fpu.ll_resp_data := v.resp.bits.data
       io.fpu.ll_resp_type := v.resp.bits.size
       io.fpu.ll_resp_tag := v.resp.bits.rd
+      io.fpu.ll_resp_start_cycle := wb_reg_start_cycle
       // Note: vector response PC not supported yet, using wb_reg_pc as fallback
       // io.fpu.ll_resp_pc := v.resp.bits.pc
     }
@@ -1214,12 +1226,14 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   when (io.dmem.req.fire && ex_ctrl.mem && isRead(ex_ctrl.mem_cmd)) {
     ll_pc_tracker(ex_dcache_tag(5,1)) := ex_reg_pc
     ll_inst_tracker(ex_dcache_tag(5,1)) := ex_reg_inst
+    ll_start_cycle_tracker(ex_dcache_tag(5,1)) := ex_reg_start_cycle
   }
   
   // Save PC and instruction when issuing a div/mul instruction
   when (div.io.req.fire) {
     ll_pc_tracker(ex_waddr) := ex_reg_pc
     ll_inst_tracker(ex_waddr) := ex_reg_inst
+    ll_start_cycle_tracker(ex_waddr) := ex_reg_start_cycle
   }
   
   // Save PC and instruction when issuing a RoCC instruction
@@ -1228,6 +1242,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       val rocc_rd = wb_reg_inst.asTypeOf(new RoCCInstruction()).rd
       ll_pc_tracker(rocc_rd) := wb_reg_pc
       ll_inst_tracker(rocc_rd) := wb_reg_inst
+      ll_start_cycle_tracker(rocc_rd) := wb_reg_start_cycle
     }
   }
 
@@ -1294,19 +1309,25 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     val wfd = wb_ctrl.wfd
     val wxd = wb_ctrl.wxd
     val has_data = wb_wen && !wb_set_sboard
+    val wb_end_cycle = sim_cycle
+    val wb_cycle_span = wb_end_cycle - wb_reg_start_cycle + 1.U
 
     when (t.valid && !t.exception) {
       when (wfd) {
-        printf ("%d 0x%x (0x%x) f%d p%d 0xXXXXXXXXXXXXXXXX\n", t.priv, t.iaddr, t.insn, rd, rd+32.U)
+        printf ("%d 0x%x (0x%x) f%d p%d 0xXXXXXXXXXXXXXXXX clk_start=%d clk_end=%d clk_span=%d\n",
+          t.priv, t.iaddr, t.insn, rd, rd+32.U, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
       }
       .elsewhen (wxd && rd =/= 0.U && has_data) {
-        printf ("%d 0x%x (0x%x) x%d 0x%x\n", t.priv, t.iaddr, t.insn, rd, rf_wdata)
+        printf ("%d 0x%x (0x%x) x%d 0x%x clk_start=%d clk_end=%d clk_span=%d\n",
+          t.priv, t.iaddr, t.insn, rd, rf_wdata, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
       }
       .elsewhen (wxd && rd =/= 0.U && !has_data) {
-        printf ("%d 0x%x (0x%x) x%d p%d 0xXXXXXXXXXXXXXXXX\n", t.priv, t.iaddr, t.insn, rd, rd)
+        printf ("%d 0x%x (0x%x) x%d p%d 0xXXXXXXXXXXXXXXXX clk_start=%d clk_end=%d clk_span=%d\n",
+          t.priv, t.iaddr, t.insn, rd, rd, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
       }
       .otherwise {
-        printf ("%d 0x%x (0x%x)\n", t.priv, t.iaddr, t.insn)
+        printf ("%d 0x%x (0x%x) clk_start=%d clk_end=%d clk_span=%d\n",
+          t.priv, t.iaddr, t.insn, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
       }
     }
 
@@ -1325,19 +1346,26 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       // printf("ROCKET-DBG: WB store pc=0x%x cmd=0x%x amo=%d addr=0x%x actual=0x%x eff=0x%x latched=0x%x mask=0x%x respValid=%d respReplay=%d size=%d\n",
       //   wb_reg_pc, wb_ctrl.mem_cmd, isAMO(wb_ctrl.mem_cmd).asUInt, store_addr, actual_store_data, store_effective_data,
       //   wb_reg_store_data, resp_store_mask, io.dmem.resp.valid.asUInt, io.dmem.resp.bits.replay.asUInt, wb_reg_mem_size)
-      printf("3 0x%x (STORE) addr=0x%x data=0x%x size=%d\n", wb_reg_pc, store_addr, store_effective_data, wb_reg_mem_size)
+      printf("%d 0x%x (STORE) addr=0x%x data=0x%x size=%d clk_start=%d clk_end=%d clk_span=%d\n",
+        t.priv, wb_reg_pc, store_addr, store_effective_data, wb_reg_mem_size,
+        wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
     }
 
     // Print exception information (not interrupts)
     when (t.exception && !t.interrupt) {
-      printf ("%d 0x%x (0x%x) EXCEPTION cause=0x%x tval=0x%x\n", t.priv, t.iaddr, t.insn, t.cause, t.tval)
+      printf ("%d 0x%x (0x%x) EXCEPTION cause=0x%x tval=0x%x clk_start=%d clk_end=%d clk_span=%d\n",
+        t.priv, t.iaddr, t.insn, t.cause, t.tval, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
     }
 
     // Print long-latency X register writeback with tracked PC
     when (ll_wen && rf_waddr =/= 0.U) {
       val ll_pc = ll_pc_tracker(rf_waddr)
       val ll_inst = ll_inst_tracker(rf_waddr)
-      printf ("3 0x%x (0x%x) x%d 0x%x\n", ll_pc, ll_inst, rf_waddr, rf_wdata)
+      val ll_start_cycle = ll_start_cycle_tracker(rf_waddr)
+      val ll_end_cycle = sim_cycle
+      val ll_cycle_span = ll_end_cycle - ll_start_cycle + 1.U
+      printf ("3 0x%x (0x%x) x%d 0x%x clk_start=%d clk_end=%d clk_span=%d\n",
+        ll_pc, ll_inst, rf_waddr, rf_wdata, ll_start_cycle, ll_end_cycle, ll_cycle_span)
     }
   }
   else {
