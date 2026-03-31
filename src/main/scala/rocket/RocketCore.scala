@@ -599,7 +599,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ex_reg_inst := id_inst(0)
     ex_reg_raw_inst := id_raw_inst(0)
     ex_reg_pc := ibuf.io.pc
-    ex_reg_start_cycle := sim_cycle
+    ex_reg_start_cycle := sim_cycle + 1.U
     ex_reg_btb_resp := ibuf.io.btb_resp
     ex_reg_wphit := bpu.io.bpwatch.map { bpw => bpw.ivalid(0) }
     ex_reg_set_vconfig := id_set_vconfig && !id_xcpt
@@ -1173,9 +1173,9 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       io.fpu.ll_resp_data := v.resp.bits.data
       io.fpu.ll_resp_type := v.resp.bits.size
       io.fpu.ll_resp_tag := v.resp.bits.rd
-      io.fpu.ll_resp_start_cycle := wb_reg_start_cycle
-      // Note: vector response PC not supported yet, using wb_reg_pc as fallback
-      // io.fpu.ll_resp_pc := v.resp.bits.pc
+      io.fpu.ll_resp_pc := ll_pc_tracker(v.resp.bits.rd)
+      io.fpu.ll_resp_inst := ll_inst_tracker(v.resp.bits.rd)
+      io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(v.resp.bits.rd)
     }
   }
 
@@ -1243,6 +1243,14 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       ll_pc_tracker(rocc_rd) := wb_reg_pc
       ll_inst_tracker(rocc_rd) := wb_reg_inst
       ll_start_cycle_tracker(rocc_rd) := wb_reg_start_cycle
+    }
+  }
+
+  io.vector.foreach { _ =>
+    when (wb_valid && wb_ctrl.vec && wb_ctrl.wfd) {
+      ll_pc_tracker(wb_waddr) := wb_reg_pc
+      ll_inst_tracker(wb_waddr) := wb_reg_inst
+      ll_start_cycle_tracker(wb_waddr) := wb_reg_start_cycle
     }
   }
 

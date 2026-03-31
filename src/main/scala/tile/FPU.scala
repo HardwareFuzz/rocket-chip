@@ -774,7 +774,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   val ex_reg_inst = RegEnable(io.inst, io.valid)
   val ex_reg_ctrl = RegEnable(id_ctrl, io.valid)
   val ex_reg_pc = RegEnable(io.pc, io.valid)
-  val ex_reg_start_cycle = RegEnable(io.sim_cycle, io.valid)
+  val ex_reg_start_cycle = RegEnable(io.sim_cycle + 1.U, io.valid)
   val ex_ra = List.fill(3)(Reg(UInt()))
 
   // load/vector response
