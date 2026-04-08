@@ -4,6 +4,8 @@
 #include <vpi_user.h>
 #include <svdpi.h>
 
+#include "FuzzDTM_impl.inc"
+
 dtm_t* dtm;
 
 extern "C" int debug_tick
