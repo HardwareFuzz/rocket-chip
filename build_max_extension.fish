@@ -6,9 +6,14 @@
 
 set -g SCRIPT_DIR (dirname (status -f))
 set -g PROJECT_ROOT $SCRIPT_DIR
+set -g REPO_ROOT (cd "$PROJECT_ROOT/../.." && pwd)
 set -g BUILD_DIR $PROJECT_ROOT/out
 set -g RESULT_DIR $PROJECT_ROOT/build_result
-set -g RISCV_BIN_DIR /home/canxin/Git/riscv_fuzz_test/riscv_impls_bins
+if set -q CX_OUT_DIR
+    set -g ARTIFACT_DIR $CX_OUT_DIR
+else
+    set -g ARTIFACT_DIR "$REPO_ROOT/artifacts"
+end
 set -g COVERAGE_MODE "none"   # none | full | light
 set -g MILL_CMD mill
 
@@ -214,12 +219,13 @@ function build_config
                     cp -f $emulator_path $dest_path
                     print_success "Copied emulator to $dest_path"
 
-                    if not test -d $RISCV_BIN_DIR
-                        mkdir -p $RISCV_BIN_DIR
+                    if not test -d $ARTIFACT_DIR
+                        mkdir -p $ARTIFACT_DIR
                     end
-                    set fuzz_dest "$RISCV_BIN_DIR/$artifact"
-                    cp -f $emulator_path $fuzz_dest
-                    print_success "Copied emulator to $fuzz_dest"
+                    set artifact_dest "$ARTIFACT_DIR/$artifact"
+                    cp -f $emulator_path $artifact_dest
+                    chmod +x $artifact_dest
+                    print_success "Copied emulator to $artifact_dest"
                 end
             end
         else
@@ -237,6 +243,7 @@ print_banner
 # Change to project directory
 cd $PROJECT_ROOT
 print_info "Project root: $PROJECT_ROOT"
+print_info "Canonical artifact dir: $ARTIFACT_DIR"
 
 # Clean if requested
 if test $CLEAN_FIRST -eq 1
@@ -262,15 +269,15 @@ for target in $TARGETS
         case 'rv64'
             set config "MaxExtensionRV64ConfigWithTrace"
             set label "RV64"
-            set artifact "rocket_rv64"
+            set artifact "rocket-chip_rv64fd_1c"
         case 'rv32'
             set config "MaxExtensionRV32ConfigWithTrace"
             set label "RV32"
-            set artifact "rocket_rv32_fd"
+            set artifact "rocket-chip_rv32fd_1c"
         case 'rv32-no-d'
             set config "MaxExtensionRV32NoDConfigWithTrace"
             set label "RV32 (No D)"
-            set artifact "rocket_rv32_f"
+            set artifact "rocket-chip_rv32f_1c"
         case '*'
             print_warning "Unknown build target: $target (skipping)"
             continue
@@ -336,6 +343,7 @@ if test (count $FAILED_BUILDS) -eq 0
     echo ""
     echo "  4. Emulator binaries copied to:"
     echo "     $RESULT_DIR"
+    echo "     $ARTIFACT_DIR"
     echo ""
     exit 0
 else

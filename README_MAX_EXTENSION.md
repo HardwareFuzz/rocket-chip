@@ -39,24 +39,27 @@
 ./build_max_extension.fish
 ```
 
-这将生成Verilog并构建Verilator模拟器。
+这会生成 Verilog、构建 Verilator 模拟器，并把结果复制到：
 
-### 2. 仅生成Verilog
+- `build_result/`
+- 仓库级 `artifacts/`（或你显式设置的 `CX_OUT_DIR`）
 
-```bash
-./build_max_extension.fish --rv64 --verilog
-```
-
-### 3. 构建RV32配置
+### 2. 构建RV32配置
 
 ```bash
 ./build_max_extension.fish --rv32
 ```
 
-### 4. 构建两个配置
+### 3. 构建RV32无D扩展配置
 
 ```bash
-./build_max_extension.fish --both
+./build_max_extension.fish --rv32-no-d
+```
+
+### 4. 构建全部配置
+
+```bash
+./build_max_extension.fish --all
 ```
 
 ### 5. 清理后重新构建
@@ -238,6 +241,16 @@ _Float16 test_fp16(_Float16 a, _Float16 b) {
 Hypervisor扩展需要特殊的引导代码和虚拟机监控器软件。请参考RISC-V Hypervisor规范。
 
 ## 构建输出
+
+脚本会把构建产物按 `cx-riscv-cores` 统一命名规则复制到仓库级 `artifacts/`：
+
+- `rocket-chip_rv64fd_1c`
+- `rocket-chip_rv32fd_1c`
+- `rocket-chip_rv32f_1c`
+
+如果启用了覆盖模式，还会自动追加 `_cov` 或 `_cov_light` 后缀。
+
+如果你设置了 `CX_OUT_DIR=/some/path`，这些 artifact 会改为输出到该目录。
 
 ### Verilog文件位置
 ```
