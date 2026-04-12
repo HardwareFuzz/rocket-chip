@@ -6,8 +6,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <stdexcept>
+
+#define FUZZ_DTM_DEBUG_ENV "FUZZ_DTM_DEBUG"
+
+static bool fuzz_dtm_debug_enabled() {
+  static int cached = -1;
+  if (cached == -1) {
+    const char *raw = getenv(FUZZ_DTM_DEBUG_ENV);
+    cached = (raw && raw[0] != '\0' && strcmp(raw, "0") != 0) ? 1 : 0;
+  }
+  return cached == 1;
+}
+
+static void fuzz_dtm_debug_log(const char *fmt, ...) {
+  if (!fuzz_dtm_debug_enabled()) {
+    return;
+  }
+
+  va_list args;
+  va_start(args, fmt);
+  fprintf(stderr, "[fuzz-dtm] ");
+  vfprintf(stderr, fmt, args);
+  fprintf(stderr, "\n");
+  va_end(args);
+}
 
 #define RV_X(x, s, n) (((x) >> (s)) & ((1 << (n)) - 1))
 #define ENCODE_ITYPE_IMM(x) (RV_X(x, 0, 12) << 20)
@@ -86,6 +111,7 @@ void dtm_t::select_hart(int hartsel) {
       (hartsel >> DM_DMCONTROL_HARTSELLO_LENGTH) & ((1 << DM_DMCONTROL_HARTSELHI_LENGTH) - 1));
   write(DM_DMCONTROL, dmcontrol);
   current_hart = hartsel;
+  fuzz_dtm_debug_log("select_hart hartsel=%d dmcontrol=0x%08x", hartsel, dmcontrol);
 }
 
 int dtm_t::enumerate_harts() {
@@ -102,14 +128,20 @@ int dtm_t::enumerate_harts() {
   dmcontrol = read(DM_DMCONTROL);
   max_hart = (get_field(dmcontrol, DM_DMCONTROL_HARTSELHI) << DM_DMCONTROL_HARTSELLO_LENGTH) |
              get_field(dmcontrol, DM_DMCONTROL_HARTSELLO);
+  fuzz_dtm_debug_log("enumerate_harts max_hart_after_probe=%d dmcontrol=0x%08x", max_hart,
+                     dmcontrol);
 
   for (int hartsel = 0; hartsel <= max_hart; hartsel++) {
     select_hart(hartsel);
     int dmstatus = read(DM_DMSTATUS);
+    fuzz_dtm_debug_log("enumerate_harts hartsel=%d dmstatus=0x%08x anynonexistent=%d", hartsel,
+                       dmstatus, get_field(dmstatus, DM_DMSTATUS_ANYNONEXISTENT));
     if (get_field(dmstatus, DM_DMSTATUS_ANYNONEXISTENT)) {
+      fuzz_dtm_debug_log("enumerate_harts result=%d (first nonexistent hartsel)", hartsel);
       return hartsel;
     }
   }
+  fuzz_dtm_debug_log("enumerate_harts result=%d (full range present)", max_hart + 1);
   return max_hart + 1;
 }
 
@@ -131,6 +163,7 @@ void dtm_t::halt(int hartsel) {
   do {
     dmstatus = read(DM_DMSTATUS);
   } while (get_field(dmstatus, DM_DMSTATUS_ALLHALTED) == 0);
+  fuzz_dtm_debug_log("halt hartsel=%d dmstatus=0x%08x", hartsel, dmstatus);
   dmcontrol &= ~DM_DMCONTROL_HALTREQ;
   write(DM_DMCONTROL, dmcontrol);
   read(DM_DMSTATUS);
@@ -150,6 +183,7 @@ void dtm_t::resume(int hartsel) {
   do {
     dmstatus = read(DM_DMSTATUS);
   } while (get_field(dmstatus, DM_DMSTATUS_ALLRESUMEACK) == 0);
+  fuzz_dtm_debug_log("resume hartsel=%d dmstatus=0x%08x", hartsel, dmstatus);
   dmcontrol &= ~DM_DMCONTROL_RESUMEREQ;
   write(DM_DMCONTROL, dmcontrol);
   read(DM_DMSTATUS);
@@ -457,10 +491,13 @@ void dtm_t::fence_i() {
 static void host_thread_main(void *arg) { ((dtm_t *)arg)->producer_thread(); }
 
 void dtm_t::reset() {
+  fuzz_dtm_debug_log("reset begin num_harts=%d xlen=%u entry=0x%llx", num_harts, xlen,
+                     (unsigned long long)get_entry_point());
   for (int hartsel = 0; hartsel < num_harts; hartsel++) {
     select_hart(hartsel);
     fence_i();
     write_csr(0x7b1, get_entry_point());
+    fuzz_dtm_debug_log("reset programmed dpc for hartsel=%d", hartsel);
   }
 
   for (int hartsel = 1; hartsel < num_harts; hartsel++) {
@@ -472,6 +509,7 @@ void dtm_t::reset() {
   read(DM_DMSTATUS);
   current_hart = 0;
   running = true;
+  fuzz_dtm_debug_log("reset end current_hart=%d running=%d", current_hart, running ? 1 : 0);
 }
 
 void dtm_t::idle() {
@@ -486,17 +524,20 @@ void dtm_t::producer_thread() {
   }
 
   uint32_t hartinfo = read(DM_HARTINFO);
+  fuzz_dtm_debug_log("producer_thread hartinfo=0x%08x", hartinfo);
   assert(get_field(hartinfo, DM_HARTINFO_NSCRATCH) > 0);
   assert(get_field(hartinfo, DM_HARTINFO_DATAACCESS));
 
   data_base = get_field(hartinfo, DM_HARTINFO_DATAADDR);
 
   num_harts = enumerate_harts();
+  fuzz_dtm_debug_log("producer_thread num_harts=%d data_base=0x%x", num_harts, data_base);
   for (int hartsel = 1; hartsel < num_harts; hartsel++) {
     halt(hartsel);
   }
   halt(0);
   xlen = get_xlen();
+  fuzz_dtm_debug_log("producer_thread xlen=%u current_hart=%d", xlen, current_hart);
 
   htif_t::run();
 
