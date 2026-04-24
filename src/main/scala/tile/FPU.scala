@@ -182,7 +182,9 @@ class FPUDecoder(implicit p: Parameters) extends FPUModule()(p) {
 class FPUCoreIO(implicit p: Parameters) extends CoreBundle()(p) {
   val hartid = Input(UInt(hartIdLen.W))
   val time = Input(UInt(xLen.W))
+  val issue_start_cycle = Input(UInt(64.W))
   val sim_cycle = Input(UInt(64.W))
+  val trace_priv = Input(UInt(3.W))
 
   val inst = Input(Bits(32.W))
   val fromint_data = Input(Bits(xLen.W))
@@ -202,6 +204,7 @@ class FPUCoreIO(implicit p: Parameters) extends CoreBundle()(p) {
   val ll_resp_pc = Input(UInt(vaddrBitsExtended.W))  // PC for load/vector response
   val ll_resp_inst = Input(UInt(32.W))  // Instruction for load/vector response
   val ll_resp_start_cycle = Input(UInt(64.W))
+  val ll_resp_trace_priv = Input(UInt(3.W))
 
   val valid = Input(Bool())
   val pc = Input(UInt(vaddrBitsExtended.W))  // PC for current instruction
@@ -774,7 +777,8 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   val ex_reg_inst = RegEnable(io.inst, io.valid)
   val ex_reg_ctrl = RegEnable(id_ctrl, io.valid)
   val ex_reg_pc = RegEnable(io.pc, io.valid)
-  val ex_reg_start_cycle = RegEnable(io.sim_cycle + 1.U, io.valid)
+  val ex_reg_start_cycle = RegEnable(io.issue_start_cycle, io.valid)
+  val ex_reg_trace_priv = RegEnable(io.trace_priv, io.valid)
   val ex_ra = List.fill(3)(Reg(UInt()))
 
   // load/vector response
@@ -785,6 +789,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   val load_wb_pc = RegEnable(io.ll_resp_pc, io.ll_resp_val)
   val load_wb_inst = RegEnable(io.ll_resp_inst, io.ll_resp_val)
   val load_wb_start_cycle = RegEnable(io.ll_resp_start_cycle, io.ll_resp_val)
+  val load_wb_trace_priv = RegEnable(io.ll_resp_trace_priv, io.ll_resp_val)
 
   class FPUImpl { // entering gated-clock domain
 
@@ -802,6 +807,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   val mem_reg_inst = RegEnable(ex_reg_inst, ex_reg_valid)
   val mem_reg_pc = RegEnable(ex_reg_pc, ex_reg_valid)
   val mem_reg_start_cycle = RegEnable(ex_reg_start_cycle, ex_reg_valid)
+  val mem_reg_trace_priv = RegEnable(ex_reg_trace_priv, ex_reg_valid)
   val wb_reg_valid = RegNext(mem_reg_valid && (!killm || mem_cp_valid), false.B)
   val wb_reg_pc = RegNext(mem_reg_pc)
 
@@ -837,9 +843,10 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     regfile(load_wb_tag) := wdata
     assert(consistent(wdata))
     if (enableCommitLog)
-      printf("3 0x%x (0x%x) f%d 0x%x clk_start=%d clk_end=%d clk_span=%d\n",
-        load_wb_pc, load_wb_inst, load_wb_tag, ieee(wdata),
-        load_wb_start_cycle, load_wb_end_cycle, load_wb_cycle_span)
+      printf("%d 0x%x (0x%x) f%d 0x%x clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
+        load_wb_trace_priv, load_wb_pc, load_wb_inst, load_wb_tag, ieee(wdata),
+        load_wb_start_cycle, load_wb_end_cycle, load_wb_cycle_span,
+        io.hartid, load_wb_trace_priv(1, 0), load_wb_trace_priv(2))
     if (useDebugROB)
       DebugROB.pushWb(clock, reset, io.hartid, load_wb, load_wb_tag + 32.U, ieee(wdata))
     frfWriteBundle(0).wrdst := load_wb_tag
@@ -917,6 +924,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   val divSqrt_pc = Reg(UInt(vaddrBitsExtended.W))
   val divSqrt_inst = Reg(UInt(32.W))
   val divSqrt_start_cycle = Reg(UInt(64.W))
+  val divSqrt_trace_priv = Reg(UInt(3.W))
   val divSqrt_cp = Reg(Bool())
   val divSqrt_typeTag = Wire(UInt(log2Up(floatTypes.size).W))
   val divSqrt_wdata = Wire(UInt((fLen+1).W))
@@ -955,6 +963,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     val pc = UInt(vaddrBitsExtended.W)
     val inst = UInt(32.W)
     val start_cycle = UInt(64.W)
+    val trace_priv = UInt(3.W)
     val typeTag = UInt(log2Up(floatTypes.size).W)
     val cp = Bool()
     val pipeid = UInt(log2Ceil(pipes.size).W)
@@ -983,6 +992,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
         wbInfo(i).pc := mem_reg_pc
         wbInfo(i).inst := mem_reg_inst
         wbInfo(i).start_cycle := mem_reg_start_cycle
+        wbInfo(i).trace_priv := mem_reg_trace_priv
       }
     }
   }
@@ -991,6 +1001,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   val wpc = Mux(divSqrt_wen, divSqrt_pc, wbInfo(0).pc)
   val winst = Mux(divSqrt_wen, divSqrt_inst, wbInfo(0).inst)
   val wstartCycle = Mux(divSqrt_wen, divSqrt_start_cycle, wbInfo(0).start_cycle)
+  val wtracePriv = Mux(divSqrt_wen, divSqrt_trace_priv, wbInfo(0).trace_priv)
   val wb_cp = Mux(divSqrt_wen, divSqrt_cp, wbInfo(0).cp)
   val wtypeTag = Mux(divSqrt_wen, divSqrt_typeTag, wbInfo(0).typeTag)
   val wdata = box(Mux(divSqrt_wen, divSqrt_wdata, (pipes.map(_.res.data): Seq[UInt])(wbInfo(0).pipeid)), wtypeTag)
@@ -1001,8 +1012,9 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     assert(consistent(wdata))
     regfile(waddr) := wdata
     if (enableCommitLog) {
-      printf("3 0x%x (0x%x) f%d 0x%x clk_start=%d clk_end=%d clk_span=%d\n",
-        wpc, winst, waddr, ieee(wdata), wstartCycle, wb_end_cycle, wb_cycle_span)
+      printf("%d 0x%x (0x%x) f%d 0x%x clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
+        wtracePriv, wpc, winst, waddr, ieee(wdata), wstartCycle, wb_end_cycle, wb_cycle_span,
+        io.hartid, wtracePriv(1, 0), wtracePriv(2))
     }
     frfWriteBundle(1).wrdst := waddr
     frfWriteBundle(1).wrenf := true.B
@@ -1051,6 +1063,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
       divSqrt_pc := mem_reg_pc
       divSqrt_inst := mem_reg_inst
       divSqrt_start_cycle := mem_reg_start_cycle
+      divSqrt_trace_priv := mem_reg_trace_priv
       divSqrt_cp := mem_cp_valid
     }
 

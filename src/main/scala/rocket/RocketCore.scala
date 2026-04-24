@@ -262,6 +262,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val ex_reg_replay = Reg(Bool())
   val ex_reg_pc = Reg(UInt())
   val ex_reg_start_cycle = Reg(UInt(64.W))
+  val id_head_track_valid = RegInit(false.B)
+  val id_head_track_pc = Reg(UInt(vaddrBitsExtended.W))
+  val id_head_track_inst = Reg(UInt(32.W))
+  val id_head_track_start_cycle = Reg(UInt(64.W))
   val ex_reg_mem_size = Reg(UInt())
   val ex_reg_hls = Reg(Bool())
   val ex_reg_inst = Reg(Bits())
@@ -357,6 +361,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val id_csr = Mux(id_system_insn && id_ctrl.mem, CSR.N, Mux(id_csr_ren, CSR.R, id_ctrl.csr))
   val id_csr_flush = id_system_insn || (id_csr_en && !id_csr_ren && csr.io.decode(0).write_flush)
   val id_set_vconfig = Seq(Instructions.VSETVLI, Instructions.VSETIVLI, Instructions.VSETVL).map(_ === id_inst(0)).orR && usingVector.B
+  val id_head_can_track = ibuf.io.inst(0).valid && !ibuf.io.inst(0).bits.replay && !take_pc && !csr.io.interrupt
+  val id_head_matches_track =
+    id_head_track_valid && id_head_track_pc === ibuf.io.pc && id_head_track_inst === id_inst(0).asUInt
+  val id_head_start_cycle = Mux(id_head_can_track && !id_head_matches_track, sim_cycle, id_head_track_start_cycle)
 
   id_ctrl.vec := false.B
   if (usingVector) {
@@ -599,7 +607,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ex_reg_inst := id_inst(0)
     ex_reg_raw_inst := id_raw_inst(0)
     ex_reg_pc := ibuf.io.pc
-    ex_reg_start_cycle := sim_cycle + 1.U
+    ex_reg_start_cycle := id_head_start_cycle
     ex_reg_btb_resp := ibuf.io.btb_resp
     ex_reg_wphit := bpu.io.bpwatch.map { bpw => bpw.ivalid(0) }
     ex_reg_set_vconfig := id_set_vconfig && !id_xcpt
@@ -803,6 +811,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val ll_pc_tracker = Reg(Vec(32, UInt(vaddrBitsExtended.W)))
   val ll_inst_tracker = Reg(Vec(32, UInt(32.W)))
   val ll_start_cycle_tracker = Reg(Vec(32, UInt(64.W)))
+  val ll_trace_priv_tracker = Reg(Vec(32, UInt(3.W)))
 
   class LLWB extends Bundle {
     val data = UInt(xLen.W)
@@ -1103,6 +1112,20 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     io.traceStall
   ctrl_killd := !ibuf.io.inst(0).valid || ibuf.io.inst(0).bits.replay || take_pc_mem_wb || ctrl_stalld || csr.io.interrupt
 
+  when (!id_head_can_track) {
+    id_head_track_valid := false.B
+  }.otherwise {
+    when (!id_head_matches_track) {
+      id_head_track_valid := true.B
+      id_head_track_pc := ibuf.io.pc
+      id_head_track_inst := id_inst(0).asUInt
+      id_head_track_start_cycle := sim_cycle
+    }
+    when (!ctrl_killd) {
+      id_head_track_valid := false.B
+    }
+  }
+
   io.imem.req.valid := take_pc
   io.imem.req.bits.speculative := !take_pc_wb
   io.imem.req.bits.pc :=
@@ -1162,7 +1185,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.fpu.ll_resp_pc := ll_pc_tracker(dmem_resp_waddr)  // Tracked PC of the FP load
   io.fpu.ll_resp_inst := ll_inst_tracker(dmem_resp_waddr)  // Tracked instruction of the FP load
   io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(dmem_resp_waddr)
+  io.fpu.ll_resp_trace_priv := ll_trace_priv_tracker(dmem_resp_waddr)
+  io.fpu.issue_start_cycle := id_head_start_cycle
   io.fpu.sim_cycle := sim_cycle
+  io.fpu.trace_priv := Cat(csr.io.status.debug, csr.io.status.prv)
   io.fpu.keep_clock_enabled := io.ptw.customCSRs.disableCoreClockGate
 
   io.fpu.v_sew := csr.io.vector.map(_.vconfig.vtype.vsew).getOrElse(0.U)
@@ -1176,6 +1202,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       io.fpu.ll_resp_pc := ll_pc_tracker(v.resp.bits.rd)
       io.fpu.ll_resp_inst := ll_inst_tracker(v.resp.bits.rd)
       io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(v.resp.bits.rd)
+      io.fpu.ll_resp_trace_priv := ll_trace_priv_tracker(v.resp.bits.rd)
     }
   }
 
@@ -1227,6 +1254,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ll_pc_tracker(ex_dcache_tag(5,1)) := ex_reg_pc
     ll_inst_tracker(ex_dcache_tag(5,1)) := ex_reg_inst
     ll_start_cycle_tracker(ex_dcache_tag(5,1)) := ex_reg_start_cycle
+    ll_trace_priv_tracker(ex_dcache_tag(5,1)) := Cat(csr.io.status.debug, csr.io.status.prv)
   }
   
   // Save PC and instruction when issuing a div/mul instruction
@@ -1234,6 +1262,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ll_pc_tracker(ex_waddr) := ex_reg_pc
     ll_inst_tracker(ex_waddr) := ex_reg_inst
     ll_start_cycle_tracker(ex_waddr) := ex_reg_start_cycle
+    ll_trace_priv_tracker(ex_waddr) := Cat(csr.io.status.debug, csr.io.status.prv)
   }
   
   // Save PC and instruction when issuing a RoCC instruction
@@ -1243,6 +1272,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       ll_pc_tracker(rocc_rd) := wb_reg_pc
       ll_inst_tracker(rocc_rd) := wb_reg_inst
       ll_start_cycle_tracker(rocc_rd) := wb_reg_start_cycle
+      ll_trace_priv_tracker(rocc_rd) := Cat(csr.io.status.debug, csr.io.status.prv)
     }
   }
 
@@ -1251,6 +1281,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       ll_pc_tracker(wb_waddr) := wb_reg_pc
       ll_inst_tracker(wb_waddr) := wb_reg_inst
       ll_start_cycle_tracker(wb_waddr) := wb_reg_start_cycle
+      ll_trace_priv_tracker(wb_waddr) := Cat(csr.io.status.debug, csr.io.status.prv)
     }
   }
 
@@ -1313,6 +1344,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
   if (enableCommitLog) {
     val t = csr.io.trace(0)
+    val t_prv = t.priv(1, 0)
+    val t_debug = t.priv(2)
     val rd = wb_waddr
     val wfd = wb_ctrl.wfd
     val wxd = wb_ctrl.wxd
@@ -1322,20 +1355,22 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
     when (t.valid && !t.exception) {
       when (wfd) {
-        printf ("%d 0x%x (0x%x) f%d p%d 0xXXXXXXXXXXXXXXXX clk_start=%d clk_end=%d clk_span=%d\n",
-          t.priv, t.iaddr, t.insn, rd, rd+32.U, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
+        printf ("%d 0x%x (0x%x) f%d p%d 0xXXXXXXXXXXXXXXXX pending=1 hart=%d priv=%d debug=%d\n",
+          t.priv, t.iaddr, t.insn, rd, rd+32.U, io.hartid, t_prv, t_debug)
       }
       .elsewhen (wxd && rd =/= 0.U && has_data) {
-        printf ("%d 0x%x (0x%x) x%d 0x%x clk_start=%d clk_end=%d clk_span=%d\n",
-          t.priv, t.iaddr, t.insn, rd, rf_wdata, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
+        printf ("%d 0x%x (0x%x) x%d 0x%x clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
+          t.priv, t.iaddr, t.insn, rd, rf_wdata, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span,
+          io.hartid, t_prv, t_debug)
       }
       .elsewhen (wxd && rd =/= 0.U && !has_data) {
-        printf ("%d 0x%x (0x%x) x%d p%d 0xXXXXXXXXXXXXXXXX clk_start=%d clk_end=%d clk_span=%d\n",
-          t.priv, t.iaddr, t.insn, rd, rd, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
+        printf ("%d 0x%x (0x%x) x%d p%d 0xXXXXXXXXXXXXXXXX pending=1 hart=%d priv=%d debug=%d\n",
+          t.priv, t.iaddr, t.insn, rd, rd, io.hartid, t_prv, t_debug)
       }
       .otherwise {
-        printf ("%d 0x%x (0x%x) clk_start=%d clk_end=%d clk_span=%d\n",
-          t.priv, t.iaddr, t.insn, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
+        printf ("%d 0x%x (0x%x) clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
+          t.priv, t.iaddr, t.insn, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span,
+          io.hartid, t_prv, t_debug)
       }
     }
 
@@ -1354,15 +1389,16 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       // printf("ROCKET-DBG: WB store pc=0x%x cmd=0x%x amo=%d addr=0x%x actual=0x%x eff=0x%x latched=0x%x mask=0x%x respValid=%d respReplay=%d size=%d\n",
       //   wb_reg_pc, wb_ctrl.mem_cmd, isAMO(wb_ctrl.mem_cmd).asUInt, store_addr, actual_store_data, store_effective_data,
       //   wb_reg_store_data, resp_store_mask, io.dmem.resp.valid.asUInt, io.dmem.resp.bits.replay.asUInt, wb_reg_mem_size)
-      printf("%d 0x%x (STORE) addr=0x%x data=0x%x size=%d clk_start=%d clk_end=%d clk_span=%d\n",
+      printf("%d 0x%x (STORE) addr=0x%x data=0x%x size=%d clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
         t.priv, wb_reg_pc, store_addr, store_effective_data, wb_reg_mem_size,
-        wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
+        wb_reg_start_cycle, wb_end_cycle, wb_cycle_span, io.hartid, t_prv, t_debug)
     }
 
     // Print exception information (not interrupts)
     when (t.exception && !t.interrupt) {
-      printf ("%d 0x%x (0x%x) EXCEPTION cause=0x%x tval=0x%x clk_start=%d clk_end=%d clk_span=%d\n",
-        t.priv, t.iaddr, t.insn, t.cause, t.tval, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span)
+      printf ("%d 0x%x (0x%x) EXCEPTION cause=0x%x tval=0x%x clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
+        t.priv, t.iaddr, t.insn, t.cause, t.tval, wb_reg_start_cycle, wb_end_cycle, wb_cycle_span,
+        io.hartid, t_prv, t_debug)
     }
 
     // Print long-latency X register writeback with tracked PC
@@ -1370,10 +1406,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       val ll_pc = ll_pc_tracker(rf_waddr)
       val ll_inst = ll_inst_tracker(rf_waddr)
       val ll_start_cycle = ll_start_cycle_tracker(rf_waddr)
+      val ll_trace_priv = ll_trace_priv_tracker(rf_waddr)
       val ll_end_cycle = sim_cycle
       val ll_cycle_span = ll_end_cycle - ll_start_cycle + 1.U
-      printf ("3 0x%x (0x%x) x%d 0x%x clk_start=%d clk_end=%d clk_span=%d\n",
-        ll_pc, ll_inst, rf_waddr, rf_wdata, ll_start_cycle, ll_end_cycle, ll_cycle_span)
+      printf ("%d 0x%x (0x%x) x%d 0x%x clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
+        ll_trace_priv, ll_pc, ll_inst, rf_waddr, rf_wdata, ll_start_cycle, ll_end_cycle,
+        ll_cycle_span, io.hartid, ll_trace_priv(1, 0), ll_trace_priv(2))
     }
   }
   else {
