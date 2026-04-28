@@ -12,12 +12,12 @@ Build a runnable Verilator-based Rocket Chip emulator (out-of-tree mill build).
 Options:
   --isa <isa>           ISA/build variant (default: rv64fd). May be specified multiple times.
                         Supported:
-                          rv64fd (DefaultConfigWithTrace)
+                          rv64fd (MaxExtensionRV64ConfigWithTrace: B+FP16+Zicond+H)
                           rv64f  (TraceRV64FConfig)
                           rv64   (TraceRV64Config)
-                          rv32fd (TraceRV32FDConfig)
-                          rv32f  (TraceRV32FConfig)
-                          rv32   (TraceRV32Config)
+                          rv32fd (MaxExtensionRV32ConfigWithTrace: B+FP16+Zicond+FD)
+                          rv32f  (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond+F)
+                          rv32   (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond)
   --config <ConfigClass> Override the config class (applies to all --isa values).
                          Examples: DefaultConfigWithTrace, TraceRV64Config, TraceRV32Config, DefaultSmallConfig
   --cores <1|2>         Core count tag used for output naming (default: 1)
@@ -117,6 +117,15 @@ OUT_DIR="${OUT_DIR_OPT:-${CX_OUT_DIR:-${OUT_DIR:-${OUT_DIR_DEFAULT}}}}"
 
 mkdir -p "${OUT_DIR}"
 
+# Ensure cmake find_package(verilator) picks up the system Verilator 5.x headers
+# rather than any older VERILATOR_ROOT left in the environment.
+if [[ -z "${VERILATOR_ROOT:-}" ]]; then
+  _detected_root="$(verilator --getenv VERILATOR_ROOT 2>/dev/null || true)"
+  if [[ -n "${_detected_root}" && -d "${_detected_root}" ]]; then
+    export VERILATOR_ROOT="${_detected_root}"
+  fi
+fi
+
 ensure_mill
 
 # Coverage builds require a fresh mill process so VERILATOR_* env vars are visible.
@@ -132,22 +141,22 @@ build_one() {
 
   if [[ "${CORES}" == "1" ]]; then
     case "${isa_in}" in
-      rv64fd) default_cfg_class="DefaultConfigWithTrace" ;;
-      rv64f) default_cfg_class="TraceRV64FConfig" ;;
-      rv64) default_cfg_class="TraceRV64Config" ;;
-      rv32fd) default_cfg_class="TraceRV32FDConfig" ;;
-      rv32f) default_cfg_class="TraceRV32FConfig" ;;
-      rv32) default_cfg_class="TraceRV32Config" ;;
+      rv64fd) default_cfg_class="MaxExtensionRV64ConfigWithTrace" ;;
+      rv64f)  default_cfg_class="TraceRV64FConfig" ;;
+      rv64)   default_cfg_class="TraceRV64Config" ;;
+      rv32fd) default_cfg_class="MaxExtensionRV32ConfigWithTrace" ;;
+      rv32f)  default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
+      rv32)   default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
       *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
     esac
   else
     case "${isa_in}" in
-      rv64fd) default_cfg_class="TraceRV64FDConfig2C" ;;
-      rv64f) default_cfg_class="TraceRV64FConfig2C" ;;
-      rv64) default_cfg_class="TraceRV64Config2C" ;;
-      rv32fd) default_cfg_class="TraceRV32FDConfig2C" ;;
-      rv32f) default_cfg_class="TraceRV32FConfig2C" ;;
-      rv32) default_cfg_class="TraceRV32Config2C" ;;
+      rv64fd) default_cfg_class="MaxExtensionRV64ConfigWithTrace2C" ;;
+      rv64f)  default_cfg_class="TraceRV64FConfig2C" ;;
+      rv64)   default_cfg_class="TraceRV64Config2C" ;;
+      rv32fd) default_cfg_class="MaxExtensionRV32ConfigWithTrace2C" ;;
+      rv32f)  default_cfg_class="MaxExtensionRV32NoDConfigWithTrace2C" ;;
+      rv32)   default_cfg_class="MaxExtensionRV32NoDConfigWithTrace2C" ;;
       *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
     esac
   fi

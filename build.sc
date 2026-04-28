@@ -369,6 +369,10 @@ object emulator extends Cross[Emulator](
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV64ConfigWithTrace"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV32ConfigWithTrace"),
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV32NoDConfigWithTrace"),
+  // Maximum extension configurations with commit log — dual-core variants
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV64ConfigWithTrace2C"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV32ConfigWithTrace2C"),
+  ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.MaxExtensionRV32NoDConfigWithTrace2C"),
   // RocketSuiteB
   ("freechips.rocketchip.system.TestHarness", "freechips.rocketchip.system.DefaultBufferlessConfig"),
   // RocketSuiteC

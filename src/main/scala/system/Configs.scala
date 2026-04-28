@@ -260,3 +260,39 @@ class MaxExtensionRV32NoDConfigWithTrace extends Config(
   new WithCoherentBusTopology ++
   new BaseConfig
 )
+
+// Maximum extension configurations with commit log — dual-core variants
+class MaxExtensionRV64ConfigWithTrace2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithHypervisor ++
+  new WithBootROMResetVectorToDram ++
+  new DualCoreConfig
+)
+
+class MaxExtensionRV32ConfigWithTrace2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithRV32DoublePrecision ++
+  new WithBootROMResetVectorToDram ++
+  new WithRV32 ++
+  new WithNBigCores(2) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
+
+class MaxExtensionRV32NoDConfigWithTrace2C extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithBootROMResetVectorToDram ++
+  new WithRV32 ++
+  new WithNBigCores(2) ++
+  new WithCoherentBusTopology ++
+  new BaseConfig
+)
