@@ -12,12 +12,12 @@ Build a runnable Verilator-based Rocket Chip emulator (out-of-tree mill build).
 Options:
   --isa <isa>           ISA/build variant (default: rv64fd). May be specified multiple times.
                         Supported:
-                          rv64fd (DefaultConfigWithTrace)
+                          rv64fd (MaxExtensionRV64ConfigWithTrace: B+FP16+Zicond+H)
                           rv64f  (TraceRV64FConfig)
                           rv64   (TraceRV64Config)
-                          rv32fd (TraceRV32FDConfig)
-                          rv32f  (TraceRV32FConfig)
-                          rv32   (TraceRV32Config)
+                          rv32fd (MaxExtensionRV32ConfigWithTrace: B+FP16+Zicond+FD)
+                          rv32f  (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond+F)
+                          rv32   (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond)
   --config <ConfigClass> Override the config class (applies to all --isa values).
                          Examples: DefaultConfigWithTrace, TraceRV64Config, TraceRV32Config, DefaultSmallConfig
   --cores 1             Core count tag used for output naming (default: 1)
@@ -131,12 +131,12 @@ build_one() {
   local default_cfg_class=""
 
   case "${isa_in}" in
-    rv64fd) default_cfg_class="DefaultConfigWithTrace" ;;
-    rv64f) default_cfg_class="TraceRV64FConfig" ;;
-    rv64) default_cfg_class="TraceRV64Config" ;;
-    rv32fd) default_cfg_class="TraceRV32FDConfig" ;;
-    rv32f) default_cfg_class="TraceRV32FConfig" ;;
-    rv32) default_cfg_class="TraceRV32Config" ;;
+    rv64fd) default_cfg_class="MaxExtensionRV64ConfigWithTrace" ;;
+    rv64f)  default_cfg_class="TraceRV64FConfig" ;;
+    rv64)   default_cfg_class="TraceRV64Config" ;;
+    rv32fd) default_cfg_class="MaxExtensionRV32ConfigWithTrace" ;;
+    rv32f)  default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
+    rv32)   default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
     *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
   esac
 
