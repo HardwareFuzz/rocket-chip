@@ -117,6 +117,15 @@ OUT_DIR="${OUT_DIR_OPT:-${CX_OUT_DIR:-${OUT_DIR:-${OUT_DIR_DEFAULT}}}}"
 
 mkdir -p "${OUT_DIR}"
 
+# Ensure cmake find_package(verilator) picks up the system Verilator 5.x headers
+# rather than any older VERILATOR_ROOT left in the environment.
+if [[ -z "${VERILATOR_ROOT:-}" ]]; then
+  _detected_root="$(verilator --getenv VERILATOR_ROOT 2>/dev/null || true)"
+  if [[ -n "${_detected_root}" && -d "${_detected_root}" ]]; then
+    export VERILATOR_ROOT="${_detected_root}"
+  fi
+fi
+
 ensure_mill
 
 # Coverage builds require a fresh mill process so VERILATOR_* env vars are visible.
