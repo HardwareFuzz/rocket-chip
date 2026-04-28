@@ -279,6 +279,7 @@ class WithZba                                             extends RocketCoreConf
 class WithZbb                                             extends RocketCoreConfig(_.copy(useZbb = true))
 class WithZbs                                             extends RocketCoreConfig(_.copy(useZbs = true))
 class WithB                                               extends RocketCoreConfig(_.copy(useZba = true, useZbb = true, useZbs = true))
+class WithConditionalZero                                 extends RocketCoreConfig(_.copy(useConditionalZero = true))
 class WithSV48                                            extends WithPgLevels(4)
 class WithSV39                                            extends WithPgLevels(3)
 
