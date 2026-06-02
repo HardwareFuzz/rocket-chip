@@ -1374,9 +1374,11 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       }
     }
 
-    // Print store information (only when no exception)
+    // SC failure returns non-zero in rd and must not be logged as a store even if wb_ctrl.mem_cmd
+    // has already drifted away from M_XSC by the time the commit trace is emitted.
+    val wb_is_sc = (Instructions.SC_W === t.insn) || (Instructions.SC_D === t.insn)
     val wb_store_log_valid = t.valid && !t.exception && wb_ctrl.mem && isWrite(wb_ctrl.mem_cmd) &&
-      (wb_ctrl.mem_cmd =/= M_XSC || rf_wdata === 0.U)
+      (!wb_is_sc || rf_wdata === 0.U)
     when (wb_store_log_valid) {
       val store_addr = encodeVirtualAddress(wb_reg_wdata, wb_reg_wdata)
       // Use store_data from DCache response if available (for AMO instructions)
