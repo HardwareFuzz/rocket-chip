@@ -160,6 +160,21 @@ class MaxExtensionRV64Config extends Config(
   new DefaultConfig
 )
 
+class MaxExtensionRV64FConfig extends Config(
+  new WithB ++
+  new WithFP16 ++
+  new WithHypervisor ++
+  new WithRV64SinglePrecision ++
+  new DefaultConfig
+)
+
+class MaxExtensionRV64NoFConfig extends Config(
+  new WithB ++
+  new WithHypervisor ++
+  new WithoutFPU ++
+  new DefaultConfig
+)
+
 class MaxExtensionRV32Config extends Config(
   new WithB ++
   new WithFP16 ++
@@ -186,6 +201,25 @@ class MaxExtensionRV64ConfigWithTrace extends Config(
   new freechips.rocketchip.rocket.WithConditionalZero ++
   new WithFP16 ++
   new WithHypervisor ++
+  new DefaultConfig
+)
+
+class MaxExtensionRV64FConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithFP16 ++
+  new WithHypervisor ++
+  new WithRV64SinglePrecision ++
+  new DefaultConfig
+)
+
+class MaxExtensionRV64NoFConfigWithTrace extends Config(
+  new freechips.rocketchip.rocket.WithTraceCoreIngress ++
+  new WithB ++
+  new freechips.rocketchip.rocket.WithConditionalZero ++
+  new WithHypervisor ++
+  new WithoutFPU ++
   new DefaultConfig
 )
 

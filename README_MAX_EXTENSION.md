@@ -2,7 +2,15 @@
 
 ## 概述
 
-本配置提供了带有最大扩展功能的Rocket Chip构建，包括完整的commit log日志功能。
+本配置提供了带有最大扩展功能的 Rocket Chip 构建，包括完整的 commit log 日志功能。
+当前 `build.sh` 为所有发布的 ISA 标签都绑定了对应的 max-extension trace config：
+
+- `rv64fd` -> `MaxExtensionRV64ConfigWithTrace`
+- `rv64f` -> `MaxExtensionRV64FConfigWithTrace`
+- `rv64` -> `MaxExtensionRV64NoFConfigWithTrace`
+- `rv32fd` -> `MaxExtensionRV32ConfigWithTrace`
+- `rv32f` -> `MaxExtensionRV32NoDConfigWithTrace`
+- `rv32` -> `MaxExtensionRV32NoDConfigWithTrace`
 
 ## 配置详情
 
@@ -11,6 +19,7 @@
 **特性:**
 - ✅ 64位RISC-V ISA (RV64IMAFDC)
 - ✅ B扩展 (Zba + Zbb + Zbs) - 位操作扩展
+- ✅ Zicond 条件零扩展
 - ✅ FP16支持 - 半精度浮点
 - ✅ H扩展 - Hypervisor虚拟化支持
 - ✅ Commit Log - 完整的指令执行日志
@@ -21,11 +30,33 @@
 3. 内存写入: `<priv> 0x<pc> (STORE) addr=0x<addr> data=0x<data> size=<size>`
 4. 同步异常: `<priv> 0x<pc> (0x<inst>) EXCEPTION cause=0x<cause> tval=0x<tval>`
 
+### RV64F 配置 (`MaxExtensionRV64FConfigWithTrace`)
+
+**特性:**
+- ✅ 64位 RISC-V ISA (RV64IMAF)
+- ✅ B扩展 (Zba + Zbb + Zbs)
+- ✅ Zicond 条件零扩展
+- ✅ FP16 支持 - 半精度浮点
+- ✅ H扩展 - Hypervisor虚拟化支持
+- ✅ 保持单精度 FPU (`fLen = 32`)
+- ✅ Commit Log - 完整的指令执行日志
+
+### RV64 无 FPU 配置 (`MaxExtensionRV64NoFConfigWithTrace`)
+
+**特性:**
+- ✅ 64位 RISC-V ISA (RV64IMAC)
+- ✅ B扩展 (Zba + Zbb + Zbs)
+- ✅ Zicond 条件零扩展
+- ✅ H扩展 - Hypervisor虚拟化支持
+- ✅ 不引入 F/D/FP16
+- ✅ Commit Log - 完整的指令执行日志
+
 ### RV32 配置 (`MaxExtensionRV32ConfigWithTrace`)
 
 **特性:**
 - ✅ 32位RISC-V ISA (RV32IMAFDC)
 - ✅ B扩展 (Zba + Zbb + Zbs)
+- ✅ Zicond 条件零扩展
 - ✅ D扩展 - 64位双精度浮点 (FLEN = 64)
 - ✅ FP16支持 - 半精度浮点
 - ✅ SV32虚拟内存

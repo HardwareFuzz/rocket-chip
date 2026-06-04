@@ -12,9 +12,9 @@ Build a runnable Verilator-based Rocket Chip emulator (out-of-tree mill build).
 Options:
   --isa <isa>           ISA/build variant (default: rv64fd). May be specified multiple times.
                         Supported:
-                          rv64fd (MaxExtensionRV64ConfigWithTrace: B+FP16+Zicond+H)
-                          rv64f  (TraceRV64FConfig)
-                          rv64   (TraceRV64Config)
+                          rv64fd (MaxExtensionRV64ConfigWithTrace: B+FP16+Zicond+FD+H)
+                          rv64f  (MaxExtensionRV64FConfigWithTrace: B+FP16+Zicond+F+H)
+                          rv64   (MaxExtensionRV64NoFConfigWithTrace: B+Zicond+H)
                           rv32fd (MaxExtensionRV32ConfigWithTrace: B+FP16+Zicond+FD)
                           rv32f  (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond+F)
                           rv32   (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond)
@@ -141,8 +141,8 @@ build_one() {
 
   case "${isa_in}" in
     rv64fd) default_cfg_class="MaxExtensionRV64ConfigWithTrace" ;;
-    rv64f)  default_cfg_class="TraceRV64FConfig" ;;
-    rv64)   default_cfg_class="TraceRV64Config" ;;
+    rv64f)  default_cfg_class="MaxExtensionRV64FConfigWithTrace" ;;
+    rv64)   default_cfg_class="MaxExtensionRV64NoFConfigWithTrace" ;;
     rv32fd) default_cfg_class="MaxExtensionRV32ConfigWithTrace" ;;
     rv32f)  default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
     rv32)   default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
@@ -162,7 +162,12 @@ build_one() {
   echo "[build] ${artifact_name} (config=${cfg})"
   (
     cd "${ROOT_DIR}"
-    env "${extra_env[@]}" "${MILL_CMD}" "${mill_args[@]}" -i "emulator[${top},${cfg}].verilator.elf"
+    mill_cmd=("${MILL_CMD}" "${mill_args[@]}")
+    if [[ "${COV_MODE}" == "none" ]]; then
+      mill_cmd+=(-i)
+    fi
+    mill_cmd+=("emulator[${top},${cfg}].verilator.elf")
+    env "${extra_env[@]}" "${mill_cmd[@]}"
   )
 
   emu_bin="${ROOT_DIR}/out/emulator/${top}/${cfg}/verilator/elf.dest/emulator"
