@@ -14,10 +14,8 @@ Options:
                         Supported:
                           rv64fd (MaxExtensionRV64ConfigWithTrace: B+FP16+Zicond+H)
                           rv64f  (MaxExtensionRV64FConfigWithTrace: B+FP16+Zicond+F+H)
-                          rv64   (MaxExtensionRV64NoFConfigWithTrace: B+Zicond+H)
                           rv32fd (MaxExtensionRV32ConfigWithTrace: B+FP16+Zicond+FD)
                           rv32f  (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond+F)
-                          rv32   (MaxExtensionRV32NoDConfigWithTrace: B+FP16+Zicond)
   --config <ConfigClass> Override the config class (applies to all --isa values).
                          Examples: DefaultConfigWithTrace, TraceRV64Config, TraceRV32Config, DefaultSmallConfig
   --cores <1|2>         Core count tag used for output naming (default: 1)
@@ -91,6 +89,17 @@ if [[ "${CORES}" != "1" && "${CORES}" != "2" ]]; then
   die "--cores ${CORES} is unsupported (supported: 1 or 2)"
 fi
 
+validate_isa() {
+  case "$1" in
+    rv64fd|rv64f|rv32fd|rv32f) ;;
+    *) die "unsupported --isa on this branch: $1 (supported: rv64fd, rv64f, rv32fd, rv32f)" ;;
+  esac
+}
+
+for isa in "${ISAS[@]}"; do
+  validate_isa "${isa}"
+done
+
 suffix=""
 extra_env=()
 case "${COV_MODE}" in
@@ -143,21 +152,17 @@ build_one() {
     case "${isa_in}" in
       rv64fd) default_cfg_class="MaxExtensionRV64ConfigWithTrace" ;;
       rv64f)  default_cfg_class="MaxExtensionRV64FConfigWithTrace" ;;
-      rv64)   default_cfg_class="MaxExtensionRV64NoFConfigWithTrace" ;;
       rv32fd) default_cfg_class="MaxExtensionRV32ConfigWithTrace" ;;
       rv32f)  default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
-      rv32)   default_cfg_class="MaxExtensionRV32NoDConfigWithTrace" ;;
-      *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
+      *) die "internal: unexpected isa after validation: ${isa_in}" ;;
     esac
   else
     case "${isa_in}" in
       rv64fd) default_cfg_class="MaxExtensionRV64ConfigWithTrace2C" ;;
       rv64f)  default_cfg_class="MaxExtensionRV64FConfigWithTrace2C" ;;
-      rv64)   default_cfg_class="MaxExtensionRV64NoFConfigWithTrace2C" ;;
       rv32fd) default_cfg_class="MaxExtensionRV32ConfigWithTrace2C" ;;
       rv32f)  default_cfg_class="MaxExtensionRV32NoDConfigWithTrace2C" ;;
-      rv32)   default_cfg_class="MaxExtensionRV32NoDConfigWithTrace2C" ;;
-      *) die "unsupported --isa on this branch: ${isa_in} (supported: rv64fd, rv64f, rv64, rv32fd, rv32f, rv32)" ;;
+      *) die "internal: unexpected isa after validation: ${isa_in}" ;;
     esac
   fi
 
