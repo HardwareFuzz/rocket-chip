@@ -9,8 +9,9 @@ import org.chipsalliance.cde.config._
 import org.chipsalliance.diplomacy.lazymodule._
 
 import freechips.rocketchip.devices.tilelink.{BasicBusBlockerParams, BasicBusBlocker}
+import org.chipsalliance.diplomacy.DisableMonitors
 import freechips.rocketchip.diplomacy.{
-  AddressSet, DisableMonitors, BufferParams
+  AddressSet, BufferParams
 }
 import freechips.rocketchip.resources.{
   SimpleDevice, Description,
@@ -92,7 +93,7 @@ class RocketTile private(
    * and selecting trace sink
    */
   val trace_encoder_controller = rocketParams.traceParams.map { t =>
-    val trace_encoder_controller = LazyModule(new TraceEncoderController(t.encoderBaseAddr, xBytes))
+    val trace_encoder_controller = LazyModule(new TraceEncoderController(t.encoderBaseAddr, xBytes, tileId))
     connectTLSlave(trace_encoder_controller.node, xBytes)
     trace_encoder_controller
   }
