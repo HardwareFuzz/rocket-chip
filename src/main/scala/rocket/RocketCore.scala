@@ -1335,8 +1335,15 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ll_trace_token_tracker(Cat(1.U(1.W), ex_waddr)) := ex_reg_trace_token
   }
   
-  // Save PC and instruction when issuing a div/mul instruction
-  when (div.io.req.fire) {
+  // Save PC and instruction when issuing a div/mul instruction.
+  // div.io.req.fire can stay high for several cycles: ex_reg_valid is not
+  // cleared on fire, so when the divider finishes (req.ready returns high) the
+  // same instruction re-fires until ex advances.  Writing the tracker on every
+  // fire would re-load the same entry every cycle, so a stray ll_wen (e.g. a
+  // dmem resp) keeps re-emitting the same completed writeback.  Track on the
+  // rising edge only.
+  val div_req_fire_d = RegNext(div.io.req.fire)
+  when (div.io.req.fire && !div_req_fire_d) {
     ll_pc_tracker(ex_waddr) := ex_reg_pc
     ll_inst_tracker(ex_waddr) := ex_reg_inst
     ll_start_cycle_tracker(ex_waddr) := ex_reg_start_cycle
