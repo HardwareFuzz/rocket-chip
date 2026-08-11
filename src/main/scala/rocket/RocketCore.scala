@@ -860,12 +860,17 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   //     io.dmem.resp.bits.replay.asUInt, io.dmem.resp.bits.store_data)
   // }
 
-  // Track PC and instruction for outstanding long-latency operations
-  val ll_pc_tracker = Reg(Vec(32, UInt(vaddrBitsExtended.W)))
-  val ll_inst_tracker = Reg(Vec(32, UInt(32.W)))
-  val ll_start_cycle_tracker = Reg(Vec(32, UInt(64.W)))
-  val ll_trace_priv_tracker = Reg(Vec(32, UInt(3.W)))
-  val ll_trace_token_tracker = Reg(Vec(32, UInt(64.W)))
+  // Track PC and instruction for outstanding long-latency operations.
+  // Partitioned so load/vector tracker writes can never clobber a div/rocc
+  // entry: INT-dest long-latency ops (div/rocc) use slots 0-31 (index = rd);
+  // loads (INT and FP dests) and vector FP dests use slots 32-63 (index =
+  // 32 + rd).  This keeps e.g. div to x14, ld to x7, and fld to f14 in three
+  // distinct slots, so no load can overwrite an in-flight div's entry.
+  val ll_pc_tracker = Reg(Vec(64, UInt(vaddrBitsExtended.W)))
+  val ll_inst_tracker = Reg(Vec(64, UInt(32.W)))
+  val ll_start_cycle_tracker = Reg(Vec(64, UInt(64.W)))
+  val ll_trace_priv_tracker = Reg(Vec(64, UInt(3.W)))
+  val ll_trace_token_tracker = Reg(Vec(64, UInt(64.W)))
 
   class LLWB extends Bundle {
     val data = UInt(xLen.W)
@@ -1246,11 +1251,11 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.fpu.ll_resp_data := (if (minFLen == 32) io.dmem.resp.bits.data_word_bypass else io.dmem.resp.bits.data)
   io.fpu.ll_resp_type := io.dmem.resp.bits.size
   io.fpu.ll_resp_tag := dmem_resp_waddr
-  io.fpu.ll_resp_pc := ll_pc_tracker(dmem_resp_waddr)  // Tracked PC of the FP load
-  io.fpu.ll_resp_inst := ll_inst_tracker(dmem_resp_waddr)  // Tracked instruction of the FP load
-  io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(dmem_resp_waddr)
-  io.fpu.ll_resp_trace_priv := ll_trace_priv_tracker(dmem_resp_waddr)
-  io.fpu.ll_resp_trace_token := ll_trace_token_tracker(dmem_resp_waddr)
+  io.fpu.ll_resp_pc := ll_pc_tracker(Cat(1.U(1.W), dmem_resp_waddr))  // Tracked PC of the FP load
+  io.fpu.ll_resp_inst := ll_inst_tracker(Cat(1.U(1.W), dmem_resp_waddr))  // Tracked instruction of the FP load
+  io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(Cat(1.U(1.W), dmem_resp_waddr))
+  io.fpu.ll_resp_trace_priv := ll_trace_priv_tracker(Cat(1.U(1.W), dmem_resp_waddr))
+  io.fpu.ll_resp_trace_token := ll_trace_token_tracker(Cat(1.U(1.W), dmem_resp_waddr))
   io.fpu.issue_start_cycle := id_trace_start_cycle
   io.fpu.issue_trace_token := id_trace_token
   io.fpu.sim_cycle := sim_cycle + 1.U
@@ -1265,11 +1270,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       io.fpu.ll_resp_data := v.resp.bits.data
       io.fpu.ll_resp_type := v.resp.bits.size
       io.fpu.ll_resp_tag := v.resp.bits.rd
-      io.fpu.ll_resp_pc := ll_pc_tracker(v.resp.bits.rd)
-      io.fpu.ll_resp_inst := ll_inst_tracker(v.resp.bits.rd)
-      io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(v.resp.bits.rd)
-      io.fpu.ll_resp_trace_priv := ll_trace_priv_tracker(v.resp.bits.rd)
-      io.fpu.ll_resp_trace_token := ll_trace_token_tracker(v.resp.bits.rd)
+      // vector FP dests use slots 32-63 so they never collide with INT long-latency ops
+      io.fpu.ll_resp_pc := ll_pc_tracker(Cat(1.U(1.W), v.resp.bits.rd))
+      io.fpu.ll_resp_inst := ll_inst_tracker(Cat(1.U(1.W), v.resp.bits.rd))
+      io.fpu.ll_resp_start_cycle := ll_start_cycle_tracker(Cat(1.U(1.W), v.resp.bits.rd))
+      io.fpu.ll_resp_trace_priv := ll_trace_priv_tracker(Cat(1.U(1.W), v.resp.bits.rd))
+      io.fpu.ll_resp_trace_token := ll_trace_token_tracker(Cat(1.U(1.W), v.resp.bits.rd))
     }
   }
 
@@ -1316,13 +1322,17 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   //     io.dmem.s1_data.data, mem_store_mask, mem_reg_rs2, io.dmem.req.bits.tag, io.dmem.req.bits.no_resp.asUInt)
   // }
 
-  // Save PC and instruction when issuing a load
+  // Save PC and instruction when issuing a load.  Loads (both INT and FP dests)
+  // use slots 32-63 (index = 32 + rd), the same range as vector FP dests, so a
+  // load can never clobber the tracker entry (slots 0-31, index = rd) of an
+  // in-flight INT long-latency op (div/rocc) even when they share a register
+  // number (e.g. div to x14 vs. fld to f14, or div to x14 vs. ld to x7).
   when (io.dmem.req.fire && ex_ctrl.mem && isRead(ex_ctrl.mem_cmd)) {
-    ll_pc_tracker(ex_dcache_tag(5,1)) := ex_reg_pc
-    ll_inst_tracker(ex_dcache_tag(5,1)) := ex_reg_inst
-    ll_start_cycle_tracker(ex_dcache_tag(5,1)) := ex_reg_start_cycle
-    ll_trace_priv_tracker(ex_dcache_tag(5,1)) := Cat(0.U(1.W), ex_reg_trace_priv)
-    ll_trace_token_tracker(ex_dcache_tag(5,1)) := ex_reg_trace_token
+    ll_pc_tracker(Cat(1.U(1.W), ex_waddr)) := ex_reg_pc
+    ll_inst_tracker(Cat(1.U(1.W), ex_waddr)) := ex_reg_inst
+    ll_start_cycle_tracker(Cat(1.U(1.W), ex_waddr)) := ex_reg_start_cycle
+    ll_trace_priv_tracker(Cat(1.U(1.W), ex_waddr)) := Cat(0.U(1.W), ex_reg_trace_priv)
+    ll_trace_token_tracker(Cat(1.U(1.W), ex_waddr)) := ex_reg_trace_token
   }
   
   // Save PC and instruction when issuing a div/mul instruction
@@ -1348,11 +1358,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
   io.vector.foreach { _ =>
     when (wb_valid && wb_ctrl.vec && wb_ctrl.wfd) {
-      ll_pc_tracker(wb_waddr) := wb_reg_pc
-      ll_inst_tracker(wb_waddr) := wb_reg_inst
-      ll_start_cycle_tracker(wb_waddr) := wb_reg_start_cycle
-      ll_trace_priv_tracker(wb_waddr) := Cat(0.U(1.W), wb_reg_trace_priv)
-      ll_trace_token_tracker(wb_waddr) := wb_reg_trace_token
+      // vector FP dests use slots 32-63 so they never collide with INT long-latency ops
+      ll_pc_tracker(Cat(1.U(1.W), wb_waddr)) := wb_reg_pc
+      ll_inst_tracker(Cat(1.U(1.W), wb_waddr)) := wb_reg_inst
+      ll_start_cycle_tracker(Cat(1.U(1.W), wb_waddr)) := wb_reg_start_cycle
+      ll_trace_priv_tracker(Cat(1.U(1.W), wb_waddr)) := Cat(0.U(1.W), wb_reg_trace_priv)
+      ll_trace_token_tracker(Cat(1.U(1.W), wb_waddr)) := wb_reg_trace_token
     }
   }
 
