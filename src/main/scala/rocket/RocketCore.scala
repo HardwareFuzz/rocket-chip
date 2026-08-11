@@ -1534,7 +1534,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     // Print long-latency X register writeback with tracked PC.
     // Replayed dmem loads wrote their entry to slots 32-63 (index = 32 + rd,
     // matching the load-issue writer); div/rocc/vec writebacks keep slots 0-31.
-    when (ll_wen && rf_waddr =/= 0.U) {
+    // ll_wen can stay high for several cycles (div/rocc result held under
+    // back-pressure, or a dmem replay spanning multiple cycles), which would
+    // otherwise emit one writeback event per cycle and trip the framework's
+    // duplicate-register-write check.  Emit exactly once per rising edge.
+    val ll_wen_d = RegNext(ll_wen)
+    when (ll_wen && !ll_wen_d && rf_waddr =/= 0.U) {
       val ll_tracker_idx = Mux(dmem_resp_replay && dmem_resp_xpu, Cat(1.U(1.W), rf_waddr), rf_waddr)
       val ll_pc = ll_pc_tracker(ll_tracker_idx)
       val ll_inst = ll_inst_tracker(ll_tracker_idx)
