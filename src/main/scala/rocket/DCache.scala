@@ -473,13 +473,34 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   val lrscAddr = Reg(UInt())
   val lrscAddrMatch = lrscAddr === (s2_req.addr >> blockOffBits)
   val s2_sc_fail = s2_sc && !(lrscValid && lrscAddrMatch)
-  when ((s2_valid_hit && s2_lr && !cached_grant_wait || s2_valid_cached_miss) && !io.cpu.s2_kill) {
+  // A load-reserved must arm the reservation whenever the LR hits, even if a
+  // refill for some other line is in flight (cached_grant_wait=1). The old
+  // `!cached_grant_wait` guard skipped the arm in that window: the SC that
+  // follows the LR in the same basic block then reached s2 with no valid
+  // reservation and failed silently, even though no conflicting store or
+  // probe occurred. Diverged from functionally-correct references (Spike has
+  // no such window) and broke Zalrsc forward-progress for single-shot pairs.
+  when ((s2_valid_hit && s2_lr || s2_valid_cached_miss) && !io.cpu.s2_kill) {
     lrscCount := Mux(s2_hit, (lrscCycles - 1).U, 0.U)
     lrscAddr := s2_req.addr >> blockOffBits
   }
-  when (lrscCount > 0.U) { lrscCount := lrscCount - 1.U }
+  // Freeze the reservation countdown while the D$ is internally stalled
+  // (refill in flight, or a voluntary writeback/probe response in progress).
+  // During those cycles the core cannot even present the SC, so they must not
+  // consume the architecturally visible LR->SC budget: burning the
+  // reservation on a hardware-induced stall makes SC fail spuriously even
+  // though no conflicting store occurred (no probe ever fires), which
+  // diverges from functionally-correct references and breaks Zalrsc
+  // forward-progress for single-shot LR/SC pairs.
+  val lrsc_stalled = cached_grant_wait || !(release_state === s_ready)
+  when (lrscCount > 0.U && !lrsc_stalled) { lrscCount := lrscCount - 1.U }
   when (s2_valid_not_killed && lrscValid) { lrscCount := lrscBackoff.U }
-  when (s1_probe) { lrscCount := 0.U }
+  // Only a probe that targets the reserved line must break the reservation. A
+  // probe for an unrelated line (e.g. the coherence check that accompanies an
+  // I$ miss refill) must not: in a single-core system these are the common
+  // case, and clearing the reservation on them makes an otherwise-conflict-free
+  // SC fail spuriously.
+  when (s1_probe && (probe_bits.address >> blockOffBits) === lrscAddr) { lrscCount := 0.U }
 
   // don't perform data correction if it might clobber a recent store
   val s2_correct = s2_data_error && !any_pstore_valid && !RegNext(any_pstore_valid || s2_valid) && usingDataScratchpad.B
@@ -776,8 +797,16 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   }
   ccover(tl_out.d.valid && !tl_out.d.ready, "BLOCK_D", "D$ D-channel blocked")
 
-  // Handle an incoming TileLink Probe message
-  val block_probe_for_core_progress = blockProbeAfterGrantCount > 0.U || lrscValid
+  // Handle an incoming TileLink Probe message. Block probes only while they
+  // would actually interfere with the core: after a recent grant, or when the
+  // probe targets the line held by a live reservation (so the SC wins over a
+  // racing same-line probe). Probes for unrelated lines MUST flow through even
+  // while a reservation is held: in a single-core system the I$ miss refill
+  // that a pending SC needs triggers such a probe, and blocking it stalls the
+  // refill for the whole reservation window, so the SC arrives late and fails
+  // even though no conflicting store ever occurred (the window self-destructs).
+  val probe_is_lrsc_line = (tl_out.b.bits.address >> blockOffBits) === lrscAddr
+  val block_probe_for_core_progress = blockProbeAfterGrantCount > 0.U || (lrscValid && probe_is_lrsc_line)
   val block_probe_for_pending_release_ack = release_ack_wait && (tl_out.b.bits.address ^ release_ack_addr)(((pgIdxBits + pgLevelBits) min paddrBits) - 1, idxLSB) === 0.U
   val block_probe_for_ordering = releaseInFlight || block_probe_for_pending_release_ack || grantInProgress
   metaArb.io.in(6).valid := tl_out.b.valid && (!block_probe_for_core_progress || lrscBackingOff)

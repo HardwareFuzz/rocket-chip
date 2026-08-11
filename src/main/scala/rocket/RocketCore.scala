@@ -69,6 +69,12 @@ case class RocketCoreParams(
   val decodeWidth: Int = fetchWidth / (if (useCompressed) 2 else 1)
   val retireWidth: Int = 1
   val instBits: Int = if (useCompressed) 16 else 32
+  // Reservation window for LR/SC (cycles). Kept at the upstream value: the
+  // LR->SC budget must be long enough for normal execution (branch-replay
+  // refills, short I$ delays) but the probe handling in DCache must NOT block
+  // unrelated L2 probes while a reservation is held (see DCache probe logic) —
+  // otherwise the I$ miss refill that the SC itself needs is stalled behind
+  // the blocked probe, the SC arrives late, and the window self-destructs.
   val lrscCycles: Int = 80 // worst case is 14 mispredicted branches + slop
   val traceHasWdata: Boolean = debugROB.isDefined // ooo wb, so no wdata in trace
   override val useVector = vector.isDefined
