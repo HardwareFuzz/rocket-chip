@@ -1531,12 +1531,15 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
         io.hartid, t_prv, t_debug)
     }
 
-    // Print long-latency X register writeback with tracked PC
+    // Print long-latency X register writeback with tracked PC.
+    // Replayed dmem loads wrote their entry to slots 32-63 (index = 32 + rd,
+    // matching the load-issue writer); div/rocc/vec writebacks keep slots 0-31.
     when (ll_wen && rf_waddr =/= 0.U) {
-      val ll_pc = ll_pc_tracker(rf_waddr)
-      val ll_inst = ll_inst_tracker(rf_waddr)
-      val ll_start_cycle = ll_start_cycle_tracker(rf_waddr)
-      val ll_trace_priv = ll_trace_priv_tracker(rf_waddr)
+      val ll_tracker_idx = Mux(dmem_resp_replay && dmem_resp_xpu, Cat(1.U(1.W), rf_waddr), rf_waddr)
+      val ll_pc = ll_pc_tracker(ll_tracker_idx)
+      val ll_inst = ll_inst_tracker(ll_tracker_idx)
+      val ll_start_cycle = ll_start_cycle_tracker(ll_tracker_idx)
+      val ll_trace_priv = ll_trace_priv_tracker(ll_tracker_idx)
       val ll_end_cycle = sim_cycle + 1.U
       val ll_cycle_span = ll_end_cycle - ll_start_cycle + 1.U
       printf ("%d 0x%x (0x%x) x%d 0x%x clk_start=%d clk_end=%d clk_span=%d hart=%d priv=%d debug=%d\n",
@@ -1544,7 +1547,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
         ll_cycle_span, io.hartid, ll_trace_priv(1, 0), ll_trace_priv(2))
       printf(
         "CXTRACE v=2 event=writeback core=Rocket hart=%d token=%d cycle=%d rd_kind=x rd=%d value=0x%x\n",
-        io.hartid, ll_trace_token_tracker(rf_waddr), ll_end_cycle, rf_waddr, rf_wdata)
+        io.hartid, ll_trace_token_tracker(ll_tracker_idx), ll_end_cycle, rf_waddr, rf_wdata)
     }
   }
   else {
