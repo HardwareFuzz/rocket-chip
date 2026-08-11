@@ -473,17 +473,6 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   val lrscAddr = Reg(UInt())
   val lrscAddrMatch = lrscAddr === (s2_req.addr >> blockOffBits)
   val s2_sc_fail = s2_sc && !(lrscValid && lrscAddrMatch)
-  // A load-reserved must arm the reservation whenever the LR hits, even if a
-  // refill for some other line is in flight (cached_grant_wait=1). The old
-  // `!cached_grant_wait` guard skipped the arm in that window: the SC that
-  // follows the LR in the same basic block then reached s2 with no valid
-  // reservation and failed silently, even though no conflicting store or
-  // probe occurred. Diverged from functionally-correct references (Spike has
-  // no such window) and broke Zalrsc forward-progress for single-shot pairs.
-  when ((s2_valid_hit && s2_lr || s2_valid_cached_miss) && !io.cpu.s2_kill) {
-    lrscCount := Mux(s2_hit, (lrscCycles - 1).U, 0.U)
-    lrscAddr := s2_req.addr >> blockOffBits
-  }
   // Freeze the reservation countdown while the D$ is internally stalled
   // (refill in flight, or a voluntary writeback/probe response in progress).
   // During those cycles the core cannot even present the SC, so they must not
@@ -494,7 +483,30 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
   // forward-progress for single-shot LR/SC pairs.
   val lrsc_stalled = cached_grant_wait || !(release_state === s_ready)
   when (lrscCount > 0.U && !lrsc_stalled) { lrscCount := lrscCount - 1.U }
-  when (s2_valid_not_killed && lrscValid) { lrscCount := lrscBackoff.U }
+  // Back off only after a successful SC or an AMO, so a follow-up reservation
+  // for the same address cannot be re-acquired too quickly. The old guard ran
+  // for ANY instruction that reached s2 while a reservation was held, which
+  // collapsed the whole LR->SC budget to lrscBackoff (3) cycles as soon as a
+  // single unrelated instruction (or D$ bubble) slipped between the LR and its
+  // SC. With the reservation thus expired, an otherwise-conflict-free SC failed
+  // silently -- even with no probe, no refill and no conflicting store -- and
+  // diverged from functionally-correct references (Spike has no such window).
+  when (s2_valid_not_killed && (s2_sc || isAMO(s2_req.cmd)) && lrscValid) {
+    lrscCount := lrscBackoff.U
+  }
+  // A load-reserved must arm the reservation whenever the LR hits, even if a
+  // refill for some other line is in flight (cached_grant_wait=1) or a prior
+  // LR/SC/AMO left the reservation still counting down. The arm must have
+  // priority over the countdown and backoff: it appears AFTER them in this
+  // when-chain, so a leftover count from a previous pair would otherwise
+  // shadow the arm, leaving lrscAddr stale and making the following SC fail
+  // silently (no conflicting store, no probe) -- a divergence from
+  // functionally-correct references (Spike has no such window) that broke
+  // Zalrsc forward-progress for back-to-back LR/SC pairs.
+  when ((s2_valid_hit && s2_lr || s2_valid_cached_miss) && !io.cpu.s2_kill) {
+    lrscCount := Mux(s2_hit, (lrscCycles - 1).U, 0.U)
+    lrscAddr := s2_req.addr >> blockOffBits
+  }
   // Only a probe that targets the reserved line must break the reservation. A
   // probe for an unrelated line (e.g. the coherence check that accompanies an
   // I$ miss refill) must not: in a single-core system these are the common
